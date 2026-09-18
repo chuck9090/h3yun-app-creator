@@ -1,0 +1,302 @@
+{
+ "ObjectId": "29c7c716-7ed0-405b-b19e-7c44e2be431a",
+ "SchemaCode": "D0015994ba4c6e28fb244a485f6827e9a1f5e19",
+ "DisplayName": "未命名自动化",
+ "ExcuteType": 114,
+ "Condition": {
+  "Expression": [],
+  "UpdatedFiled": {
+   "Value": [],
+   "Text": ""
+  },
+  "ExcuteConfig": null,
+  "TriggerTypeList": null,
+  "ExcuteTypeList": [
+   114
+  ],
+  "DateFieldTrigger": null,
+  "ButtonTrigger": null,
+  "Schedule": null,
+  "RelatedSchemaCodeAliases": [
+   {
+    "Alias": "D0015994ba4c6e28fb244a485f6827e9a1f5e19@1",
+    "SchemaCode": "D0015994ba4c6e28fb244a485f6827e9a1f5e19"
+   },
+   {
+    "Alias": "D001599F8cfae5ca32e641eb83bd610275d6410a@1",
+    "SchemaCode": "D001599F8cfae5ca32e641eb83bd610275d6410a"
+   }
+  ]
+ },
+ "ConditionExpressionText": "",
+ "Action": [
+  {
+   "Condition": [],
+   "ChildrenTriggerAction": [],
+   "PluginCode": "removedata",
+   "PluginAction": [
+    "removedata"
+   ],
+   "ObjectId": "ecefeacc-a9b8-4964-a8ab-b17785989eac",
+   "DisplayName": "删除数据",
+   "SourceId": "D001599F8cfae5ca32e641eb83bd610275d6410a",
+   "SourceIdAlias": "D001599F8cfae5ca32e641eb83bd610275d6410a@1",
+   "SourceCode": "",
+   "SchemaCode": "D0015994ba4c6e28fb244a485f6827e9a1f5e19",
+   "SchemaCodeAlias": "D0015994ba4c6e28fb244a485f6827e9a1f5e19@1",
+   "TriggerType": 114,
+   "RequestMapping": {
+    "TargetSchemaValue": [
+     "D001599zdh",
+     "D001599ebcdcc7368b54d8390a836a79f57b775",
+     "D001599ebcdcc7368b54d8390a836a79f57b775"
+    ],
+    "RelationSchemaCode": [],
+    "ParentCondition": [
+     [
+      {
+       "Id": "29293183-e2b0-4f4c-95a3-cedad23ca8e0",
+       "PropertyName": "F0000002",
+       "Operator": "Equal",
+       "ValueType": "PropertyName",
+       "Value": "D0015994ba4c6e28fb244a485f6827e9a1f5e19@1.D001599F8cfae5ca32e641eb83bd610275d6410a@1.ObjectId"
+      }
+     ]
+    ],
+    "ChildCondition": [],
+    "RelationSchemaCodeAlias": [
+     [
+      "D0015994ba4c6e28fb244a485f6827e9a1f5e19@1",
+      "D001599F8cfae5ca32e641eb83bd610275d6410a@1",
+      "任务派发"
+     ],
+     [
+      "D001599ebcdcc7368b54d8390a836a79f57b775@1",
+      "D001599ebcdcc7368b54d8390a836a79f57b775@1",
+      "任务完成汇报"
+     ]
+    ]
+   },
+   "ResponseMapping": {},
+   "DataSetType": 4,
+   "RelatedSchemaCodeAliases": [
+    {
+     "Alias": "D0015994ba4c6e28fb244a485f6827e9a1f5e19@1",
+     "SchemaCode": "D0015994ba4c6e28fb244a485f6827e9a1f5e19"
+    },
+    {
+     "Alias": "D001599F8cfae5ca32e641eb83bd610275d6410a@1",
+     "SchemaCode": "D001599F8cfae5ca32e641eb83bd610275d6410a"
+    },
+    {
+     "Alias": "D001599ebcdcc7368b54d8390a836a79f57b775@1",
+     "SchemaCode": "D001599ebcdcc7368b54d8390a836a79f57b775"
+    }
+   ],
+   "ParentConditionV2": [],
+   "OnlyCreateChildren": false,
+   "OnlyUpdateChildren": false,
+   "OnlyRemoveChildren": false,
+   "GroupByPropertyMappings": false,
+   "SourceIsCondition": false,
+   "GroupByPropertyMappings_Children": null
+  },
+  {
+   "Condition": [],
+   "ChildrenTriggerAction": [],
+   "PluginCode": "updatedata",
+   "PluginAction": [
+    "updatedata"
+   ],
+   "ObjectId": "20ee73e4-d45a-4d3a-a039-a0f6cbd4771a",
+   "DisplayName": "更新数据",
+   "SourceId": "D001599F8cfae5ca32e641eb83bd610275d6410a",
+   "SourceIdAlias": "D001599F8cfae5ca32e641eb83bd610275d6410a@1",
+   "SourceCode": "",
+   "SchemaCode": "D0015994ba4c6e28fb244a485f6827e9a1f5e19",
+   "SchemaCodeAlias": "D0015994ba4c6e28fb244a485f6827e9a1f5e19@1",
+   "TriggerType": 114,
+   "RequestMapping": {
+    "TargetSchemaValue": [
+     "D001599zdh",
+     "D001599ebcdcc7368b54d8390a836a79f57b775",
+     "D001599ebcdcc7368b54d8390a836a79f57b775"
+    ],
+    "IsInsert": true,
+    "State": 2,
+    "ParentCondition": [
+     [
+      {
+       "Id": "a6bf11e6-be9c-4988-a370-3db3262c6929",
+       "PropertyName": "F0000002",
+       "Operator": "Equal",
+       "ValueType": "PropertyName",
+       "Value": "D0015994ba4c6e28fb244a485f6827e9a1f5e19@1.D001599F8cfae5ca32e641eb83bd610275d6410a@1.ObjectId"
+      }
+     ]
+    ],
+    "ChildCondition": [],
+    "UpdateFieldMappings": [
+     {
+      "TargetField": "F0000001",
+      "ValueSetType": 1,
+      "SourceType": 1,
+      "SourceField": "D0015994ba4c6e28fb244a485f6827e9a1f5e19@1.ObjectId",
+      "Extension": {
+       "AssociationPropertyName": ""
+      }
+     },
+     {
+      "SourceField": "D0015994ba4c6e28fb244a485f6827e9a1f5e19@1.OwnerId",
+      "SourceType": 1,
+      "TargetField": "OwnerId",
+      "ValueSetType": 1,
+      "Extension": {
+       "AssociationPropertyName": ""
+      }
+     },
+     {
+      "SourceField": "D0015994ba4c6e28fb244a485f6827e9a1f5e19@1.OwnerDeptId",
+      "SourceType": 1,
+      "TargetField": "OwnerDeptId",
+      "ValueSetType": 1,
+      "Extension": {
+       "AssociationPropertyName": ""
+      }
+     },
+     {
+      "SourceField": "D0015994ba4c6e28fb244a485f6827e9a1f5e19@1.D001599F8cfae5ca32e641eb83bd610275d6410a@1.ObjectId",
+      "SourceType": 1,
+      "TargetField": "F0000002",
+      "ValueSetType": 1,
+      "Extension": {
+       "AssociationPropertyName": ""
+      }
+     },
+     {
+      "SourceField": "D0015994ba4c6e28fb244a485f6827e9a1f5e19@1.D001599F8cfae5ca32e641eb83bd610275d6410a@1.F0000004",
+      "SourceType": 1,
+      "TargetField": "F0000003",
+      "ValueSetType": 1,
+      "Extension": {
+       "AssociationPropertyName": ""
+      }
+     },
+     {
+      "SourceField": "D0015994ba4c6e28fb244a485f6827e9a1f5e19@1.D001599F8cfae5ca32e641eb83bd610275d6410a@1.F0000003",
+      "SourceType": 1,
+      "TargetField": "F0000004",
+      "ValueSetType": 1,
+      "Extension": {
+       "AssociationPropertyName": ""
+      }
+     }
+    ],
+    "InsertFieldMappings": [
+     {
+      "TargetField": "F0000001",
+      "ValueSetType": 1,
+      "SourceType": 1,
+      "SourceField": "D0015994ba4c6e28fb244a485f6827e9a1f5e19@1.ObjectId",
+      "Extension": {
+       "AssociationPropertyName": ""
+      }
+     },
+     {
+      "SourceField": "D0015994ba4c6e28fb244a485f6827e9a1f5e19@1.OwnerId",
+      "SourceType": 1,
+      "TargetField": "OwnerId",
+      "ValueSetType": 1,
+      "Extension": {
+       "AssociationPropertyName": ""
+      }
+     },
+     {
+      "SourceField": "D0015994ba4c6e28fb244a485f6827e9a1f5e19@1.OwnerDeptId",
+      "SourceType": 1,
+      "TargetField": "OwnerDeptId",
+      "ValueSetType": 1,
+      "Extension": {
+       "AssociationPropertyName": ""
+      }
+     },
+     {
+      "SourceField": "D0015994ba4c6e28fb244a485f6827e9a1f5e19@1.D001599F8cfae5ca32e641eb83bd610275d6410a@1.ObjectId",
+      "SourceType": 1,
+      "TargetField": "F0000002",
+      "ValueSetType": 1,
+      "Extension": {
+       "AssociationPropertyName": ""
+      }
+     },
+     {
+      "SourceField": "D0015994ba4c6e28fb244a485f6827e9a1f5e19@1.D001599F8cfae5ca32e641eb83bd610275d6410a@1.F0000004",
+      "SourceType": 1,
+      "TargetField": "F0000003",
+      "ValueSetType": 1,
+      "Extension": {
+       "AssociationPropertyName": ""
+      }
+     },
+     {
+      "SourceField": "D0015994ba4c6e28fb244a485f6827e9a1f5e19@1.D001599F8cfae5ca32e641eb83bd610275d6410a@1.F0000003",
+      "SourceType": 1,
+      "TargetField": "F0000004",
+      "ValueSetType": 1,
+      "Extension": {
+       "AssociationPropertyName": ""
+      }
+     }
+    ],
+    "RelationSchemaCodeAlias": [
+     [
+      "D0015994ba4c6e28fb244a485f6827e9a1f5e19@1",
+      "D001599F8cfae5ca32e641eb83bd610275d6410a@1",
+      "任务派发"
+     ],
+     [
+      "D001599ebcdcc7368b54d8390a836a79f57b775@1",
+      "D001599ebcdcc7368b54d8390a836a79f57b775@1",
+      "任务完成汇报"
+     ]
+    ],
+    "FinishStartActivity": true
+   },
+   "ResponseMapping": {},
+   "DataSetType": 1,
+   "RelatedSchemaCodeAliases": [
+    {
+     "Alias": "D0015994ba4c6e28fb244a485f6827e9a1f5e19@1",
+     "SchemaCode": "D0015994ba4c6e28fb244a485f6827e9a1f5e19"
+    },
+    {
+     "Alias": "D001599F8cfae5ca32e641eb83bd610275d6410a@1",
+     "SchemaCode": "D001599F8cfae5ca32e641eb83bd610275d6410a"
+    },
+    {
+     "Alias": "D001599ebcdcc7368b54d8390a836a79f57b775@1",
+     "SchemaCode": "D001599ebcdcc7368b54d8390a836a79f57b775"
+    }
+   ],
+   "ParentConditionV2": [],
+   "OnlyCreateChildren": false,
+   "OnlyUpdateChildren": false,
+   "OnlyRemoveChildren": false,
+   "GroupByPropertyMappings": true,
+   "SourceIsCondition": false,
+   "GroupByPropertyMappings_Children": null
+  }
+ ],
+ "State": true,
+ "SortKey": 1,
+ "ExpressionEditable": true,
+ "CustomBizObjectSchema": null,
+ "Code": "",
+ "IsDevMode": false,
+ "ModifiedBy": "a98364eb-5743-4890-9ed9-2bb3f0aebc92",
+ "ModifiedName": "向铎",
+ "ModifiedTime": "/Date(1747298149000)/",
+ "ActionName": "SaveTrigger",
+ "AppCode": "D001599zdh",
+ "Operation": "isUpdate"
+}

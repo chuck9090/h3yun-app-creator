@@ -1,0 +1,27 @@
+{
+  "title": "采购订单明细→采购入库明细",
+  "form": "D0015996177d032f8f54802a31fb8a7d3384730",
+  "trigger": "生效",
+  "sortKey": 1,
+  "names": {
+    "D0015996177d032f8f54802a31fb8a7d3384730": "采购订单",
+    "D001599Ff0f2af9194e245469e825484c7f8ed64": "采购订单明细",
+    "D001599skeis23dlem0sfj1hnnl": "采购入库",
+    "D001599sf4jtg1b84eyvxlutber": "采购入库明细"
+  },
+  "actions": [
+    {
+      "do": "新增",
+      "target": "D001599skeis23dlem0sfj1hnnl",
+      "state": "生效",
+      "set": [ { "to": "F0000004", "from": "$ObjectId" } ],
+      "sub": {
+        "table": "D001599sf4jtg1b84eyvxlutber",
+        "set": [
+          { "to": "F0000002", "from": "D001599Ff0f2af9194e245469e825484c7f8ed64.F0000002" },
+          { "to": "F0000003", "from": "D001599Ff0f2af9194e245469e825484c7f8ed64.F0000003" }
+        ]
+      }
+    }
+  ]
+}

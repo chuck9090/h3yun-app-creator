@@ -1,0 +1,16 @@
+{
+  "title": "采购订单删除时",
+  "form": "D001599ce215868f3e34bb1b9a72b4a5b0b0754",
+  "trigger": "失效",
+  "sortKey": 2,
+  "names": {
+    "D001599ce215868f3e34bb1b9a72b4a5b0b0754": "采购订单"
+  },
+  "actions": [
+    {
+      "do": "删除",
+      "target": "D001599ce215868f3e34bb1b9a72b4a5b0b0754",
+      "match": [ { "field": "$OwnerDeptId", "ref": "$OwnerDeptId" } ]
+    }
+  ]
+}

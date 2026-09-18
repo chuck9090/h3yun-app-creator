@@ -1,0 +1,26 @@
+{
+  "title": "合同回款登记→回款表子表",
+  "form": "D001599a785baad7706442fb32044c29705ec45",
+  "trigger": "生效",
+  "sortKey": 1,
+  "names": {
+    "D001599a785baad7706442fb32044c29705ec45": "合同回款登记",
+    "D0015993a80cd6ecd454d13a51afc47f34fa58e": "回款计划",
+    "D001599Fc57464d8cef9461eae60d27cca9ce95d": "回款计划明细"
+  },
+  "actions": [
+    {
+      "do": "新增",
+      "target": "D0015993a80cd6ecd454d13a51afc47f34fa58e",
+      "state": "生效",
+      "match": [ { "field": "$ObjectId", "ref": "F0000001" } ],
+      "sub": {
+        "table": "D001599Fc57464d8cef9461eae60d27cca9ce95d",
+        "set": [
+          { "to": "F0000004", "from": "F0000003" },
+          { "to": "F0000005", "from": "F0000002" }
+        ]
+      }
+    }
+  ]
+}

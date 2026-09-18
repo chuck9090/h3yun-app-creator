@@ -1,0 +1,208 @@
+{
+ "ObjectId": "14356335-347f-47b3-bab7-c50a60eae75e",
+ "SchemaCode": "D0015996177d032f8f54802a31fb8a7d3384730",
+ "DisplayName": "未命名自动化",
+ "ExcuteType": 111,
+ "Condition": {
+  "Expression": [],
+  "UpdatedFiled": {
+   "Value": [],
+   "Text": ""
+  },
+  "ExcuteConfig": null,
+  "TriggerTypeList": null,
+  "ExcuteTypeList": [
+   111
+  ],
+  "DateFieldTrigger": null,
+  "ButtonTrigger": null,
+  "Schedule": null,
+  "RelatedSchemaCodeAliases": [
+   {
+    "Alias": "D0015996177d032f8f54802a31fb8a7d3384730@1",
+    "SchemaCode": "D0015996177d032f8f54802a31fb8a7d3384730"
+   },
+   {
+    "Alias": "D001599Ff0f2af9194e245469e825484c7f8ed64@1",
+    "SchemaCode": "D001599Ff0f2af9194e245469e825484c7f8ed64"
+   }
+  ]
+ },
+ "ConditionExpressionText": "",
+ "Action": [
+  {
+   "Condition": [],
+   "ChildrenTriggerAction": [
+    {
+     "Condition": [],
+     "ChildrenTriggerAction": null,
+     "PluginCode": "insertdata",
+     "PluginAction": [
+      "insertdata"
+     ],
+     "ObjectId": "f493cd86-3325-4e52-b174-d49ed4becc09",
+     "DisplayName": null,
+     "SourceId": "D001599Ff0f2af9194e245469e825484c7f8ed64",
+     "SourceIdAlias": "D001599Ff0f2af9194e245469e825484c7f8ed64@1",
+     "SourceCode": "",
+     "SchemaCode": "D0015996177d032f8f54802a31fb8a7d3384730",
+     "SchemaCodeAlias": "D0015996177d032f8f54802a31fb8a7d3384730@1",
+     "TriggerType": 111,
+     "RequestMapping": {
+      "GroupByMainPropertyMappings": true,
+      "TargetSchemaValue": [
+       "D001599zdh",
+       "D001599skeis23dlem0sfj1hnnl",
+       "D001599sf4jtg1b84eyvxlutber"
+      ],
+      "State": 1,
+      "InsertFieldMappings": [
+       {
+        "SourceField": "D0015996177d032f8f54802a31fb8a7d3384730@1.D001599Ff0f2af9194e245469e825484c7f8ed64@1.F0000002",
+        "SourceType": 1,
+        "TargetField": "D001599sf4jtg1b84eyvxlutber.F0000002",
+        "ValueSetType": 1,
+        "Extension": {
+         "AssociationPropertyName": ""
+        }
+       },
+       {
+        "SourceField": "D0015996177d032f8f54802a31fb8a7d3384730@1.D001599Ff0f2af9194e245469e825484c7f8ed64@1.F0000003",
+        "SourceType": 1,
+        "ValueSetType": 1,
+        "TargetField": "D001599sf4jtg1b84eyvxlutber.F0000003",
+        "Extension": {
+         "AssociationPropertyName": ""
+        }
+       }
+      ],
+      "RelationSchemaCodeAlias": [
+       [
+        "D0015996177d032f8f54802a31fb8a7d3384730@1",
+        "D001599Ff0f2af9194e245469e825484c7f8ed64@1",
+        "采购订单"
+       ]
+      ],
+      "ChildCondition": []
+     },
+     "ResponseMapping": {},
+     "DataSetType": 1,
+     "RelatedSchemaCodeAliases": [
+      {
+       "Alias": "D0015996177d032f8f54802a31fb8a7d3384730@1",
+       "SchemaCode": "D0015996177d032f8f54802a31fb8a7d3384730"
+      },
+      {
+       "Alias": "D001599Ff0f2af9194e245469e825484c7f8ed64@1",
+       "SchemaCode": "D001599Ff0f2af9194e245469e825484c7f8ed64"
+      }
+     ],
+     "ParentConditionV2": [],
+     "OnlyCreateChildren": false,
+     "OnlyUpdateChildren": false,
+     "OnlyRemoveChildren": false,
+     "GroupByPropertyMappings": true,
+     "SourceIsCondition": false,
+     "GroupByPropertyMappings_Children": true
+    }
+   ],
+   "PluginCode": "insertdata",
+   "PluginAction": [
+    "insertdata"
+   ],
+   "ObjectId": "e8c9f6d3-f4d5-4985-a0b7-95a9b201d0a9",
+   "DisplayName": "新增数据",
+   "SourceId": "D001599Ff0f2af9194e245469e825484c7f8ed64",
+   "SourceIdAlias": "D001599Ff0f2af9194e245469e825484c7f8ed64@1",
+   "SourceCode": "",
+   "SchemaCode": "D0015996177d032f8f54802a31fb8a7d3384730",
+   "SchemaCodeAlias": "D0015996177d032f8f54802a31fb8a7d3384730@1",
+   "TriggerType": 111,
+   "RequestMapping": {
+    "TargetSchemaValue": [
+     "D001599zdh",
+     "D001599skeis23dlem0sfj1hnnl",
+     "D001599skeis23dlem0sfj1hnnl"
+    ],
+    "State": 1,
+    "InsertFieldMappings": [
+     {
+      "TargetField": "OwnerId",
+      "ValueSetType": 1,
+      "SourceType": 1,
+      "SourceField": "D0015996177d032f8f54802a31fb8a7d3384730@1.OwnerId",
+      "Extension": {
+       "AssociationPropertyName": ""
+      }
+     },
+     {
+      "SourceField": "D0015996177d032f8f54802a31fb8a7d3384730@1.OwnerDeptId",
+      "SourceType": 1,
+      "TargetField": "OwnerDeptId",
+      "ValueSetType": 1,
+      "Extension": {
+       "AssociationPropertyName": ""
+      }
+     },
+     {
+      "SourceField": "D0015996177d032f8f54802a31fb8a7d3384730@1.ObjectId",
+      "SourceType": 1,
+      "TargetField": "F0000004",
+      "ValueSetType": 1,
+      "Extension": {
+       "AssociationPropertyName": ""
+      }
+     }
+    ],
+    "RelationSchemaCodeAlias": [
+     [
+      "D0015996177d032f8f54802a31fb8a7d3384730@1",
+      "D001599Ff0f2af9194e245469e825484c7f8ed64@1",
+      "采购订单"
+     ],
+     [
+      "D001599skeis23dlem0sfj1hnnl@1",
+      "D001599skeis23dlem0sfj1hnnl@1",
+      "采购入库"
+     ]
+    ],
+    "FinishStartActivity": true
+   },
+   "ResponseMapping": {},
+   "DataSetType": 1,
+   "RelatedSchemaCodeAliases": [
+    {
+     "Alias": "D0015996177d032f8f54802a31fb8a7d3384730@1",
+     "SchemaCode": "D0015996177d032f8f54802a31fb8a7d3384730"
+    },
+    {
+     "Alias": "D001599Ff0f2af9194e245469e825484c7f8ed64@1",
+     "SchemaCode": "D001599Ff0f2af9194e245469e825484c7f8ed64"
+    },
+    {
+     "Alias": "D001599skeis23dlem0sfj1hnnl@1",
+     "SchemaCode": "D001599skeis23dlem0sfj1hnnl"
+    }
+   ],
+   "ParentConditionV2": [],
+   "OnlyCreateChildren": false,
+   "OnlyUpdateChildren": false,
+   "OnlyRemoveChildren": false,
+   "GroupByPropertyMappings": true,
+   "SourceIsCondition": false,
+   "GroupByPropertyMappings_Children": null
+  }
+ ],
+ "State": true,
+ "SortKey": 1,
+ "ExpressionEditable": true,
+ "CustomBizObjectSchema": null,
+ "Code": "",
+ "IsDevMode": false,
+ "ModifiedBy": "a98364eb-5743-4890-9ed9-2bb3f0aebc92",
+ "ModifiedName": "向铎",
+ "ModifiedTime": "/Date(1747298819000)/",
+ "ActionName": "SaveTrigger",
+ "AppCode": "D001599zdh",
+ "Operation": "isUpdate"
+}

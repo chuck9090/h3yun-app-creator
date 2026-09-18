@@ -1,0 +1,193 @@
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  background: #f0f2f5;
+}
+
+.center-screen {
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.login-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #e6f0ff 0%, #f0f2f5 100%);
+}
+
+.login-card {
+  width: 380px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.08);
+}
+
+.app-logo {
+  color: #fff;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  background: #001529;
+}
+
+.header-user {
+  color: rgba(255, 255, 255, 0.85);
+  cursor: pointer;
+}
+
+.page-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.workbench-steps {
+  background: #fff;
+  padding: 18px 24px 4px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+
+.md-body {
+  line-height: 1.7;
+  word-break: break-word;
+}
+
+.md-body table {
+  border-collapse: collapse;
+}
+
+.md-body th,
+.md-body td {
+  border: 1px solid #e8e8e8;
+  padding: 6px 10px;
+}
+
+.flowchart-svg svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* -------------------------------------------------- React Flow 自定义节点 */
+.er-node {
+  width: 240px;
+  border: 1px solid #91caff;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  font-size: 12px;
+  overflow: hidden;
+}
+
+.er-node-title {
+  background: #e6f4ff;
+  color: #0958d9;
+  font-weight: 600;
+  padding: 6px 10px;
+  border-bottom: 1px solid #91caff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.er-node-key {
+  font-weight: 400;
+  font-size: 11px;
+  color: #8c8c8c;
+}
+
+.er-node-body {
+  max-height: 260px;
+  overflow: auto;
+}
+
+.er-node-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 10px;
+  border-bottom: 1px dashed #f0f0f0;
+}
+
+.er-node-field:last-child {
+  border-bottom: none;
+}
+
+.er-field-label {
+  color: #262626;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.er-field-type {
+  color: #8c8c8c;
+  flex: none;
+}
+
+.er-node-empty {
+  padding: 6px 10px;
+  color: #bfbfbf;
+}
+
+.er-node.is-selected .er-node {
+  border-color: #1677ff;
+  box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.15);
+}
+
+.er-flow-wrap {
+  height: 520px;
+  border: 1px solid #f0f0f0;
+  border-radius: 8px;
+  background: #fafafa;
+}
+
+.design-toolbar {
+  margin: 12px 0;
+}
+
+.field-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+
+.subtable-box {
+  background: #fafafa;
+  border: 1px dashed #d9d9d9;
+  border-radius: 6px;
+  padding: 8px;
+  margin: 4px 0 8px 24px;
+}
+
+.design-check-pre {
+  max-height: 260px;
+  overflow: auto;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}

@@ -1,0 +1,84 @@
+{
+ "SchemaCode": "D001599ce215868f3e34bb1b9a72b4a5b0b0754",
+ "ObjectId": "f8983b96-8558-4969-b1b2-70c2ad1a07b4",
+ "DisplayName": "未命名自动化",
+ "ExcuteType": 113,
+ "State": true,
+ "SortKey": 2,
+ "Action": [
+  {
+   "PluginCode": "removedata",
+   "PluginAction": [
+    "removedata"
+   ],
+   "ObjectId": "931ec15b-f70a-4365-a84b-c23205a0c624",
+   "TriggerType": 113,
+   "SourceId": "D001599ce215868f3e34bb1b9a72b4a5b0b0754",
+   "SourceCode": "",
+   "SchemaCode": "D001599ce215868f3e34bb1b9a72b4a5b0b0754",
+   "DataSetType": 2,
+   "Condition": [],
+   "RequestMapping": {
+    "TargetSchemaValue": [
+     "D001599zdh",
+     "D001599ce215868f3e34bb1b9a72b4a5b0b0754",
+     "D001599ce215868f3e34bb1b9a72b4a5b0b0754"
+    ],
+    "RelationSchemaCode": [],
+    "ParentCondition": [
+     [
+      {
+       "Id": "75f87468-e6f6-41aa-9251-d0370aeaf347",
+       "PropertyName": "OwnerDeptId",
+       "Operator": "Equal",
+       "ValueType": "PropertyName",
+       "Value": "D001599ce215868f3e34bb1b9a72b4a5b0b0754@1.OwnerDeptId"
+      }
+     ]
+    ],
+    "ChildCondition": [],
+    "RelationSchemaCodeAlias": [
+     [
+      "D001599ce215868f3e34bb1b9a72b4a5b0b0754@1",
+      "D001599ce215868f3e34bb1b9a72b4a5b0b0754@1",
+      "采购订单"
+     ]
+    ]
+   },
+   "ResponseMapping": {},
+   "ChildrenTriggerAction": [],
+   "OnlyRemoveChildren": false,
+   "DisplayName": "删除数据",
+   "SourceIdAlias": "D001599ce215868f3e34bb1b9a72b4a5b0b0754@1",
+   "SchemaCodeAlias": "D001599ce215868f3e34bb1b9a72b4a5b0b0754@1",
+   "RelatedSchemaCodeAliases": [
+    {
+     "Alias": "D001599ce215868f3e34bb1b9a72b4a5b0b0754@1",
+     "SchemaCode": "D001599ce215868f3e34bb1b9a72b4a5b0b0754"
+    }
+   ],
+   "ParentConditionV2": []
+  }
+ ],
+ "ExpressionEditable": true,
+ "Condition": {
+  "ExcuteTypeList": [
+   113
+  ],
+  "Expression": [],
+  "UpdatedFiled": {
+   "Value": [],
+   "Text": ""
+  },
+  "RelatedSchemaCodeAliases": [
+   {
+    "Alias": "D001599ce215868f3e34bb1b9a72b4a5b0b0754@1",
+    "SchemaCode": "D001599ce215868f3e34bb1b9a72b4a5b0b0754"
+   }
+  ]
+ },
+ "CustomBizObjectSchema": null,
+ "ActionName": "SaveTrigger",
+ "AppCode": "D001599zdh",
+ "Operation": "isAdd"
+}

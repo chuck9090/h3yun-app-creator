@@ -1,0 +1,26 @@
+{
+  "title": "满足供应商=1231时回写合同",
+  "form": "D001599ce215868f3e34bb1b9a72b4a5b0b0754",
+  "trigger": "生效或更新",
+  "sortKey": 1,
+  "names": {
+    "D001599ce215868f3e34bb1b9a72b4a5b0b0754": "采购订单",
+    "D001599seo6d8laooei1asey2zlr": "采购合同"
+  },
+  "when": [ { "field": "F0000001", "value": "1231" } ],
+  "actions": [
+    {
+      "do": "更新",
+      "target": "D001599seo6d8laooei1asey2zlr",
+      "state": "生效",
+      "isInsert": true,
+      "match": [ { "field": "F0000004", "ref": "$ObjectId" } ],
+      "set": [
+        { "to": "F0000004", "from": "$ObjectId" },
+        { "to": "F0000001", "from": "F0000001" },
+        { "to": "F0000002", "from": "F0000002" },
+        { "to": "F0000003", "from": "F0000003" }
+      ]
+    }
+  ]
+}

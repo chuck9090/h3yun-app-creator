@@ -1,0 +1,168 @@
+{
+ "ObjectId": "759fa6f8-d018-464a-bd08-dffb76de0034",
+ "SchemaCode": "D001599a785baad7706442fb32044c29705ec45",
+ "DisplayName": "未命名自动化",
+ "ExcuteType": 111,
+ "Condition": {
+  "Expression": [],
+  "UpdatedFiled": {
+   "Value": [],
+   "Text": ""
+  },
+  "ExcuteConfig": null,
+  "TriggerTypeList": null,
+  "ExcuteTypeList": [
+   111
+  ],
+  "DateFieldTrigger": null,
+  "ButtonTrigger": null,
+  "Schedule": null,
+  "RelatedSchemaCodeAliases": [
+   {
+    "Alias": "D001599a785baad7706442fb32044c29705ec45@1",
+    "SchemaCode": "D001599a785baad7706442fb32044c29705ec45"
+   }
+  ]
+ },
+ "ConditionExpressionText": "",
+ "Action": [
+  {
+   "Condition": [],
+   "ChildrenTriggerAction": [
+    {
+     "Condition": [],
+     "ChildrenTriggerAction": null,
+     "PluginCode": "insertdata",
+     "PluginAction": [
+      "insertdata"
+     ],
+     "ObjectId": "e57ddc70-629e-46ba-a50d-f4ed360ff977",
+     "DisplayName": null,
+     "SourceId": "D001599a785baad7706442fb32044c29705ec45",
+     "SourceIdAlias": "D001599a785baad7706442fb32044c29705ec45@1",
+     "SourceCode": "",
+     "SchemaCode": "D001599a785baad7706442fb32044c29705ec45",
+     "SchemaCodeAlias": "D001599a785baad7706442fb32044c29705ec45@1",
+     "TriggerType": 111,
+     "RequestMapping": {
+      "GroupByMainPropertyMappings": true,
+      "TargetSchemaValue": [
+       "D001599zdh",
+       "D0015993a80cd6ecd454d13a51afc47f34fa58e",
+       "D001599Fc57464d8cef9461eae60d27cca9ce95d"
+      ],
+      "State": 1,
+      "InsertFieldMappings": [
+       {
+        "SourceField": "D001599a785baad7706442fb32044c29705ec45@1.F0000003",
+        "SourceType": 1,
+        "TargetField": "D001599Fc57464d8cef9461eae60d27cca9ce95d.F0000004",
+        "ValueSetType": 1,
+        "Extension": {
+         "AssociationPropertyName": ""
+        }
+       },
+       {
+        "SourceField": "D001599a785baad7706442fb32044c29705ec45@1.F0000002",
+        "SourceType": 1,
+        "ValueSetType": 1,
+        "TargetField": "D001599Fc57464d8cef9461eae60d27cca9ce95d.F0000005",
+        "Extension": {
+         "AssociationPropertyName": ""
+        }
+       }
+      ],
+      "RelationSchemaCodeAlias": [
+       [
+        "D001599a785baad7706442fb32044c29705ec45@1",
+        "D001599a785baad7706442fb32044c29705ec45@1",
+        "合同回款登记"
+       ]
+      ]
+     },
+     "ResponseMapping": {},
+     "DataSetType": 1,
+     "RelatedSchemaCodeAliases": [
+      {
+       "Alias": "D001599a785baad7706442fb32044c29705ec45@1",
+       "SchemaCode": "D001599a785baad7706442fb32044c29705ec45"
+      }
+     ],
+     "ParentConditionV2": [],
+     "OnlyCreateChildren": false,
+     "OnlyUpdateChildren": false,
+     "OnlyRemoveChildren": false,
+     "GroupByPropertyMappings": true,
+     "SourceIsCondition": false,
+     "GroupByPropertyMappings_Children": true
+    }
+   ],
+   "PluginCode": "insertdata",
+   "PluginAction": [
+    "insertdata"
+   ],
+   "ObjectId": "18b079a1-1458-46ab-8fbc-6833297c6a99",
+   "DisplayName": "新增数据",
+   "SourceId": "D001599a785baad7706442fb32044c29705ec45",
+   "SourceIdAlias": "D001599a785baad7706442fb32044c29705ec45@1",
+   "SourceCode": "",
+   "SchemaCode": "D001599a785baad7706442fb32044c29705ec45",
+   "SchemaCodeAlias": "D001599a785baad7706442fb32044c29705ec45@1",
+   "TriggerType": 111,
+   "RequestMapping": {
+    "TargetSchemaValue": [
+     "D001599zdh",
+     "D0015993a80cd6ecd454d13a51afc47f34fa58e",
+     "D0015993a80cd6ecd454d13a51afc47f34fa58e"
+    ],
+    "State": 1,
+    "InsertFieldMappings": [],
+    "RelationSchemaCodeAlias": [
+     [
+      "D001599a785baad7706442fb32044c29705ec45@1",
+      "D001599a785baad7706442fb32044c29705ec45@1",
+      "合同回款登记"
+     ]
+    ],
+    "FinishStartActivity": true
+   },
+   "ResponseMapping": {},
+   "DataSetType": 1,
+   "RelatedSchemaCodeAliases": [
+    {
+     "Alias": "D001599a785baad7706442fb32044c29705ec45@1",
+     "SchemaCode": "D001599a785baad7706442fb32044c29705ec45"
+    }
+   ],
+   "ParentConditionV2": [
+    [
+     {
+      "PropertyName": "ObjectId",
+      "Operator": "Equal",
+      "SubOperator": null,
+      "ValueType": "PropertyName",
+      "Value": "D001599a785baad7706442fb32044c29705ec45@1.F0000001"
+     }
+    ]
+   ],
+   "OnlyCreateChildren": true,
+   "OnlyUpdateChildren": false,
+   "OnlyRemoveChildren": false,
+   "GroupByPropertyMappings": true,
+   "SourceIsCondition": false,
+   "GroupByPropertyMappings_Children": null
+  }
+ ],
+ "State": true,
+ "SortKey": 1,
+ "ExpressionEditable": true,
+ "CustomBizObjectSchema": null,
+ "Code": "",
+ "IsDevMode": false,
+ "ModifiedBy": "a98364eb-5743-4890-9ed9-2bb3f0aebc92",
+ "ModifiedName": "向铎",
+ "ModifiedTime": "/Date(1747298401000)/",
+ "ActionName": "SaveTrigger",
+ "AppCode": "D001599zdh",
+ "Operation": "isUpdate"
+}

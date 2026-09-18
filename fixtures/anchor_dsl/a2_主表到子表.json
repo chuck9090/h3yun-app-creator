@@ -1,0 +1,31 @@
+{
+  "title": "任务派发→任务完成汇报",
+  "form": "D0015994ba4c6e28fb244a485f6827e9a1f5e19",
+  "trigger": "生效或更新",
+  "sortKey": 1,
+  "names": {
+    "D0015994ba4c6e28fb244a485f6827e9a1f5e19": "任务派发",
+    "D001599F8cfae5ca32e641eb83bd610275d6410a": "任务派发明细",
+    "D001599ebcdcc7368b54d8390a836a79f57b775": "任务完成汇报"
+  },
+  "actions": [
+    {
+      "do": "删除",
+      "target": "D001599ebcdcc7368b54d8390a836a79f57b775",
+      "match": [ { "field": "F0000002", "ref": "D001599F8cfae5ca32e641eb83bd610275d6410a.$ObjectId" } ]
+    },
+    {
+      "do": "更新",
+      "target": "D001599ebcdcc7368b54d8390a836a79f57b775",
+      "state": "发起流程",
+      "isInsert": true,
+      "match": [ { "field": "F0000002", "ref": "D001599F8cfae5ca32e641eb83bd610275d6410a.$ObjectId" } ],
+      "set": [
+        { "to": "F0000001", "from": "$ObjectId" },
+        { "to": "F0000002", "from": "D001599F8cfae5ca32e641eb83bd610275d6410a.$ObjectId" },
+        { "to": "F0000003", "from": "D001599F8cfae5ca32e641eb83bd610275d6410a.F0000004" },
+        { "to": "F0000004", "from": "D001599F8cfae5ca32e641eb83bd610275d6410a.F0000003" }
+      ]
+    }
+  ]
+}
