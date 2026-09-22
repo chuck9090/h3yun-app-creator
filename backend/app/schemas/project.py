@@ -5,9 +5,9 @@ from pydantic import BaseModel, Field
 
 
 class ProjectCreate(BaseModel):
-    name: str = Field(..., min_length=1, max_length=48,
-                      description="项目标识(slug,目录名):字母数字下划线")
     title: str = Field(..., min_length=1, max_length=120, description="项目名称")
+    name: str = Field("", max_length=48,
+                      description="项目标识(slug,目录名)。留空则由系统生成序列号(proj_0001…)")
     engineCode: str = Field(..., min_length=1, max_length=64,
                             description="氚云引擎编码(目标应用后台获取,必填)")
     appCode: str = Field("", max_length=64, description="氚云应用编码(可后填)")

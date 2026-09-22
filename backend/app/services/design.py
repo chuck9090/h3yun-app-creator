@@ -10,6 +10,7 @@
 **无论哪条路径,产出都必须经 h3service.design.clean_design 清洗(剔幻觉键/非法类型/规范化 key)。**
 """
 from . import llm
+from .context import REFERENCE_GUARD
 
 _SYSTEM = """你是氚云低代码平台的表单设计器。根据《系统设计方案》与原始需求,输出每张表的完整字段结构
 **以及表单之间的自动化(触发器)**。
@@ -72,15 +73,18 @@ _SYSTEM = """你是氚云低代码平台的表单设计器。根据《系统设�
 - subtable(columns, fixed)
 
 请遵循设计 SOP:命中知识库同类系统的表/字段语义码优先复用,主动补齐常规的
-状态/日期/负责人/备注/附件/明细子表/金额等字段。"""
+状态/日期/负责人/备注/附件/明细子表/金额等字段。
+**只设计与【系统设计方案】【业务需求】相关的表;【参考资料】仅用于字段命名与口径参考,
+不得引入业务需求未提及的表、字段或自动化。**"""
 
 
-def _user_prompt(plan_markdown, requirement_text, documents_text=""):
-    parts = ["【系统设计方案】\n%s" % (plan_markdown or "(空)"),
-             "【原始需求】\n%s" % (requirement_text or "(空)")]
-    if documents_text and documents_text.strip():
-        parts.append("【用户上传的参考资料(已有系统/需求/会议等)】\n%s"
-                     % documents_text.strip())
+def _user_prompt(plan_markdown, requirement_text, reference_text=""):
+    parts = ["【系统设计方案(基于本项目需求产出)】\n%s" % (plan_markdown or "(空)"),
+             "【业务需求(本项目的唯一需求来源)】\n%s" % (requirement_text or "(空)")]
+    if reference_text and reference_text.strip():
+        parts.append("【参考资料(非本项目需求,仅供字段/口径/设计惯例参考)】\n%s"
+                     % reference_text.strip())
+        parts.append(REFERENCE_GUARD)
     return "\n\n".join(parts)
 
 
@@ -101,20 +105,29 @@ def _heuristic(requirement_text, plan_markdown):
 
 
 def generate_design(plan_markdown: str, requirement_text: str = "",
-                    documents_text: str = "") -> dict:
-    provider = llm.get_provider()
+                    reference_text: str = "", progress=None, provider=None) -> dict:
+    def _p(msg, pct=None, level="info"):
+        if progress:
+            progress(msg, pct=pct, level=level)
+
+    provider = provider or llm.get_provider()
     used = "heuristic"
     cleaned = None
     if getattr(provider, "available", False):
         try:
+            _p("调用大模型生成 ER 结构…", pct=78)
             raw = provider.complete(
-                _SYSTEM, _user_prompt(plan_markdown, requirement_text, documents_text),
+                _SYSTEM, _user_prompt(plan_markdown, requirement_text, reference_text),
                 json_mode=True)
+            _p("解析并清洗模型输出", pct=90)
             cleaned = _clean(llm.extract_json(raw))
             if cleaned:
                 used = provider.name
-        except Exception:
+        except Exception as e:
             cleaned = None
+            _p("大模型生成失败(%s),回退启发式" % str(e)[:160], pct=90, level="warning")
+    else:
+        _p("未配置大模型,使用启发式生成 ER 结构", pct=78, level="warning")
     if not cleaned:
         cleaned = _clean(_heuristic(requirement_text, plan_markdown))
         used = "heuristic"

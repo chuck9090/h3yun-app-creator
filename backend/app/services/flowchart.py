@@ -1,15 +1,17 @@
 # -*- coding: utf-8 -*-
 """业务流程图生成(mermaid)。
 
-  generate_flowchart(plan_markdown, requirement_text="") -> {mermaid, provider}
+  generate_flowchart(plan_markdown, requirement_text="", reference_text="") -> {mermaid, provider}
 
 有 LLM:只输出 mermaid `flowchart` 源码(节点用业务语言:提交申请/审批/回写/归档/通知);
+可选的 reference_text 非空时作为「参考资料」并入 prompt(为空则行为不变)。
 无 LLM / LLM 失败:从方案 markdown 解析表名,或回退启发式样本关系,生成 `flowchart LR` 骨架。
 返回的 mermaid 一定是可被 mermaid.js 渲染的合法文本(以 flowchart/graph 开头)。
 """
 import re
 
 from . import llm
+from .context import REFERENCE_GUARD
 
 _SYSTEM = """你是业务流程建模专家。请根据用户提供的《系统设计方案》输出一张业务流程图。
 要求:
@@ -17,7 +19,18 @@ _SYSTEM = """你是业务流程建模专家。请根据用户提供的《系统�
 2. 节点使用**业务语言**(如:提交申请、审批、驳回、回写主表、归档、通知),不要出现表编码/key 这类技术名;
 3. 用 `-->` 表示业务流转,必要的分支用 `|条件|` 标注;
 4. 起止节点清晰(提交/开始 → …→ 归档/结束);
-5. 不要输出 ``` 代码块以外的内容;若用 ```mermaid 包裹也可,但内部只能是 mermaid 源码。"""
+5. 不要输出 ``` 代码块以外的内容;若用 ```mermaid 包裹也可,但内部只能是 mermaid 源码;
+6. 只画【业务需求】涉及的业务流程;【参考资料】仅用于字段/口径参考,不得据此加入需求以外的流程或节点。"""
+
+
+def _user_prompt(plan_markdown, requirement_text, reference_text=""):
+    parts = ["【系统设计方案(基于本项目需求产出)】\n%s" % (plan_markdown or "(空)"),
+             "【业务需求(本项目的唯一需求来源)】\n%s" % (requirement_text or "(空)")]
+    if reference_text and reference_text.strip():
+        parts.append("【参考资料(非本项目需求,仅供字段/口径参考)】\n%s"
+                     % reference_text.strip())
+        parts.append(REFERENCE_GUARD)
+    return "\n\n".join(parts)
 
 
 def _extract_mermaid(text: str) -> str:
@@ -109,12 +122,12 @@ def _heuristic_flow(plan_markdown: str, requirement_text: str = "") -> str:
     return "\n".join(lines)
 
 
-def generate_flowchart(plan_markdown: str, requirement_text: str = "") -> dict:
+def generate_flowchart(plan_markdown: str, requirement_text: str = "",
+                       reference_text: str = "") -> dict:
     provider = llm.get_provider()
     if getattr(provider, "available", False):
         try:
-            user = "【系统设计方案】\n%s\n\n【原始需求】\n%s" % (
-                plan_markdown or "(空)", requirement_text or "(空)")
+            user = _user_prompt(plan_markdown, requirement_text, reference_text)
             mmd = _extract_mermaid(provider.complete(_SYSTEM, user))
             if _valid(mmd):
                 return {"mermaid": mmd, "provider": provider.name}

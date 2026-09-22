@@ -38,8 +38,10 @@ def read_text(slug, name, default=""):
 
 def write_text(slug, name, text):
     p = _path(slug, name)
-    with open(p, "w", encoding="utf-8") as f:
+    tmp = p + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
         f.write(text or "")
+    os.replace(tmp, p)      # 原子替换:并发读不会拿到半截内容
     return p
 
 
@@ -56,8 +58,10 @@ def read_json_file(slug, name, default=None):
 
 def write_json_file(slug, name, obj):
     p = _path(slug, name)
-    with open(p, "w", encoding="utf-8") as f:
+    tmp = p + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(obj, f, ensure_ascii=False, indent=1)
+    os.replace(tmp, p)      # 原子替换:并发读不会拿到半截内容
     return p
 
 
@@ -117,11 +121,11 @@ def save_upload(slug, filename, content: bytes):
     return stored, os.path.splitext(safe)[1].lower()
 
 
-def collect_documents_text(slug, docs):
-    """把已解析的文档文本拼成 AI 输入。docs: [{filename, parsed_text}]"""
-    parts = []
-    for d in docs:
-        t = (d.get("parsed_text") or "").strip()
-        if t:
-            parts.append("### 文件:%s\n%s" % (d.get("filename", ""), t))
-    return "\n\n".join(parts)
+def save_library_upload(filename, content: bytes):
+    """全局资料库上传件落盘(data/library/uploads/);与项目上传件分开存放。"""
+    safe = re.sub(r"[^\w.\-]+", "_", filename or "upload")[:120] or "upload"
+    os.makedirs(C.LIBRARY_UPLOAD_DIR, exist_ok=True)
+    stored = os.path.join(C.LIBRARY_UPLOAD_DIR, "%d_%s" % (int(time.time() * 1000), safe))
+    with open(stored, "wb") as f:
+        f.write(content)
+    return stored, os.path.splitext(safe)[1].lower()

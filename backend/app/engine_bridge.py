@@ -126,11 +126,17 @@ def preview(slug: str, sheet: str, cfg=None) -> dict:
 
 
 # ---------------------------------------------------------------- 部署 & 核对
-def deploy(slug: str, cfg: dict, force: bool = False) -> dict:
+def deploy(slug: str, cfg: dict, force: bool = False, progress=None) -> dict:
     """建表 → 归组(应用菜单分组) → 建自动化。all_ok = 三者都成功。"""
+    def _p(msg, pct=None):
+        if progress:
+            progress(msg, pct=pct)
+
+    _p("建表:写入氚云表单定义…", pct=20)
     res = ENGINE.run_build(slug, None, cfg, force=force, allow_root=False)
 
     grp = {"groups": [], "moved": [], "all_ok": True}
+    _p("归组:整理应用菜单分组…", pct=60)
     try:
         grp = ENGINE.run_group(slug, cfg, allow_root=False)
     except Exception as e:
@@ -142,6 +148,7 @@ def deploy(slug: str, cfg: dict, force: bool = False) -> dict:
         res["groupsError"] = grp["groupsError"]
 
     auto = {"automations": [], "all_ok": True}
+    _p("自动化:创建/更新触发器…", pct=80)
     try:
         auto = ENGINE.run_autobuild(slug, cfg, None, allow_root=False)
     except Exception as e:
@@ -153,9 +160,15 @@ def deploy(slug: str, cfg: dict, force: bool = False) -> dict:
     return res
 
 
-def verify(slug: str, cfg: dict) -> dict:
+def verify(slug: str, cfg: dict, progress=None) -> dict:
     """回读核对表单 + 自动化。"""
+    def _p(msg, pct=None):
+        if progress:
+            progress(msg, pct=pct)
+
+    _p("回读表单定义…", pct=30)
     res = ENGINE.run_verify(slug, None, cfg, allow_root=False)
+    _p("回读自动化…", pct=70)
     try:
         auto = ENGINE.run_autoverify(slug, cfg, None, allow_root=False)
         res["automations"] = auto.get("automations", [])
@@ -166,4 +179,13 @@ def verify(slug: str, cfg: dict) -> dict:
 
 
 def refresh_knowledge() -> dict:
-    return ENGINE.refresh_knowledge()
+    """编译设计知识库:项目 DSL(corpus/patterns)+ 全局资料库(library.md)。"""
+    info = ENGINE.refresh_knowledge()
+    try:
+        from .services import library as library_service
+        lib = library_service.render_library_digest()
+        if isinstance(info, dict):
+            info["library"] = lib.get("items", 0)
+    except Exception:
+        pass
+    return info

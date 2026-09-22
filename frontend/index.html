@@ -3,7 +3,27 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>h3factory 工作台</title>
+    <meta name="theme-color" content="#f4f6fb" />
+    <title>氚云应用生成平台</title>
+    <script>
+      // 首屏渲染前定主题,避免深色模式闪白
+      ;(function () {
+        try {
+          var key = 'h3ac-theme'
+          var mode = localStorage.getItem(key)
+          if (mode !== 'dark' && mode !== 'light') {
+            mode =
+              window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+                ? 'dark'
+                : 'light'
+          }
+          document.documentElement.dataset.theme = mode
+          document.documentElement.style.colorScheme = mode
+        } catch (e) {
+          document.documentElement.dataset.theme = 'light'
+        }
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>

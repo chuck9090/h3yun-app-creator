@@ -10,7 +10,7 @@ pwsh -File start.ps1                 # 后端 8000 + 前端 5173,自动装依赖
 
 访问 <http://localhost:5173>。**首次使用**:系统无用户时,登录页显示「初始化管理员」,
 由你设定邮箱+密码(无默认弱口令)。若要在启动时自动建管理员,先设置
-`H3F_ADMIN_EMAIL` / `H3F_ADMIN_PASSWORD`。
+`H3AC_ADMIN_EMAIL` / `H3AC_ADMIN_PASSWORD`。
 
 只启动单个:
 
@@ -44,10 +44,10 @@ nginx 参考(同源,保证 Cookie 携带):
 ```nginx
 server {
     listen 80;
-    server_name h3factory.example.com;
+    server_name h3yun-app-creator.example.com;
 
     location / {                       # 前端静态产物
-        root /opt/h3factory/frontend/dist;
+        root /opt/h3yun-app-creator/frontend/dist;
         try_files $uri $uri/ /index.html;   # HashRouter 其实不需要,但无害
     }
     location /api/ {                   # 反代后端
@@ -62,7 +62,8 @@ server {
 
 1. 打开网址 → 未登录跳登录页 → 邮件+密码登录;
 2. 项目列表(自己的 + 别人授权给你的);
-3. 「新建项目」:填**项目名称 / 项目标识 / 引擎编码(engineCode) / h3_token**;应用编码(appCode)可后填;
+3. 「新建项目」:填**项目名称 / 引擎编码(engineCode) / h3_token**;应用编码(appCode)可后填;
+   项目编号(slug)由系统自动生成,无需填写;
    粘贴 h3_token 会自动带出 engineCode(仍可修改);
 4. 工作台「需求」:拖拽上传已有系统文档 / 需求 / 会议记录,或富文本补充;
 5. 「生成方案」→ HTML 展示系统设计方案(底层 markdown);可进编辑页改;
@@ -75,22 +76,32 @@ server {
 
 | 变量 | 默认 | 说明 |
 |---|---|---|
-| `H3F_DATA_DIR` | `<仓库根>/data` | **运行数据目录**(DB/密钥/上传件/工作区/知识库产物) |
-| `H3F_SECRET` | 自动生成 `data/secret.key` | 会话 JWT 与凭据加密密钥 |
-| `H3F_ADMIN_EMAIL` / `H3F_ADMIN_PASSWORD` | 空(不自动建) | **设置后**才在启动时创建管理员;未设置则走前端「初始化管理员」 |
-| `H3F_CORS_ORIGINS` | `http://localhost:5173` | 允许的前端源(逗号分隔) |
-| `H3F_COOKIE_SECURE` | 空(HTTP) | 生产 HTTPS 置 `1` |
-| `H3F_LLM_BASE_URL` / `H3F_LLM_API_KEY` / `H3F_LLM_MODEL` | 空 | LLM 回退配置;管理员也可在「系统设置」页填写(优先) |
-| `H3F_NIGHTLY_HOUR` / `H3F_NIGHTLY_MIN` | `2` / `0` | 每晚知识库批处理 |
-| `H3F_MAX_UPLOAD_MB` | `30` | 单文件上限 |
+| `H3AC_DATA_DIR` | `<仓库根>/data` | **运行数据目录**(DB/密钥/上传件/工作区/知识库产物) |
+| `H3AC_SECRET` | 自动生成 `data/secret.key` | 会话 JWT 与凭据加密密钥 |
+| `H3AC_ADMIN_EMAIL` / `H3AC_ADMIN_PASSWORD` | 空(不自动建) | **设置后**才在启动时创建管理员;未设置则走前端「初始化管理员」 |
+| `H3AC_CORS_ORIGINS` | `http://localhost:5173` | 允许的前端源(逗号分隔) |
+| `H3AC_COOKIE_SECURE` | 空(HTTP) | 生产 HTTPS 置 `1` |
+| `H3AC_LLM_BASE_URL` / `H3AC_LLM_API_KEY` / `H3AC_LLM_MODEL` | 空 | LLM 回退配置;管理员也可在「系统设置」页填写(优先) |
+| `H3AC_NIGHTLY_HOUR` / `H3AC_NIGHTLY_MIN` | `2` / `0` | 每晚知识库批处理 |
+| `H3AC_MAX_UPLOAD_MB` | `30` | 单文件上限 |
+| `H3AC_ACTIVATION_TTL_DAYS` | `7` | 新用户一次性激活码有效期(天) |
+| `H3AC_JOB_TIMEOUT_MIN` | `30` | 后台任务超时(分钟无进度即判失败) |
+| `H3AC_FAIL_ORPHAN_JOBS` | `1` | 启动清理残留任务;多 worker 须设 `0` |
+| `H3AC_CTX_TOKEN_BUDGET` | `120000` | 生成时参考资料 token 预算(超出按字段优先截断) |
+| `H3AC_CTX_CATALOG_THRESHOLD` | `1000000` | 参考资料超过该 token 量 → 目录 + 按需取件模式 |
+| `H3AC_CTX_MAX_SELECT_FILES` / `H3AC_CTX_MAX_SELECT_ROUNDS` | `12` / `2` | 目录模式索取文件数上限 |
+| `H3AC_CTX_SAMPLE_ROWS` | `8` | 单表数据行样例上限(字段清单不受限) |
+| `H3AC_IMG_MAX_PER_FILE` | `6` | 单文件最多识别的内嵌图片数(0=不识别) |
+| `H3AC_PDF_OCR_MIN_CHARS` / `H3AC_PDF_OCR_MAX_PAGES` | `40` / `8` | 扫描件判定阈值 / 整页识别页数上限 |
+| `H3AC_IMG_MAX_MB` | `4` | 单张图片入模上限(MB) |
 
 ## 6. 数据与备份(代码与数据分离)
 
-**仓库内只有代码**;所有运行数据在 `data/`(默认 `<仓库根>/data`,可用 `H3F_DATA_DIR` 覆盖):
+**仓库内只有代码**;所有运行数据在 `data/`(默认 `<仓库根>/data`,可用 `H3AC_DATA_DIR` 覆盖):
 
 | 路径 | 内容 |
 |---|---|
-| `data/h3factory.db` | 用户/项目/文档索引/设置/任务(元数据) |
+| `data/h3yun-app-creator.db` | 用户/项目/文档索引/设置/任务(元数据) |
 | `data/uploads/` | 上传原件 |
 | `data/secret.key` | 服务端密钥(**必须备份,丢失则凭据无法解密**) |
 | `data/projects/<slug>/` | 项目工作区:plan.md / flowchart.mmd / design.json / requirement.* / sheets/*.json / automations/*.json |

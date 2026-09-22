@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   App as AntApp,
   Button,
   Card,
+  Empty,
   Form,
   Input,
   Modal,
@@ -14,16 +15,23 @@ import {
   Typography,
 } from 'antd'
 import {
+  CheckCircleOutlined,
   DeleteOutlined,
+  FileTextOutlined,
+  FolderOpenOutlined,
   PlusOutlined,
   ReloadOutlined,
   RightOutlined,
   SettingOutlined,
+  SyncOutlined,
 } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
 import dayjs from 'dayjs'
 import { del, errMsg, get, post, Project, STATUS_META, User } from '../api/client'
 import ProjectSettingsModal from '../components/ProjectSettingsModal'
+
+const DONE_STATUS = 'deployed'
+const DRAFT_STATUS = 'draft'
 
 export default function Projects({ me }: { me: User }) {
   const nav = useNavigate()
@@ -52,6 +60,14 @@ export default function Projects({ me }: { me: User }) {
     load()
   }, [load])
 
+  const stats = useMemo(() => {
+    const total = rows.length
+    const deployed = rows.filter((r) => r.status === DONE_STATUS).length
+    const draft = rows.filter((r) => !r.status || r.status === DRAFT_STATUS).length
+    const active = total - deployed - draft
+    return { total, active, deployed, draft }
+  }, [rows])
+
   async function createProject() {
     let v: any
     try {
@@ -62,7 +78,6 @@ export default function Projects({ me }: { me: User }) {
     setSaving(true)
     try {
       const p = await post<Project>('/api/projects', {
-        name: v.name,
         title: v.title,
         engineCode: (v.engineCode || '').trim(),
         appCode: v.appCode || '',
@@ -102,16 +117,16 @@ export default function Projects({ me }: { me: User }) {
       key: 'title',
       render: (text: string, p) => (
         <a onClick={() => nav(`/projects/${p.id}`)}>
-          <RightOutlined style={{ fontSize: 10, marginRight: 6 }} />
+          <RightOutlined style={{ fontSize: 10, marginRight: 6, opacity: 0.5 }} />
           {text || p.slug}
         </a>
       ),
     },
     {
-      title: '项目标识',
+      title: '项目编号',
       dataIndex: 'slug',
       key: 'slug',
-      width: 180,
+      width: 120,
       render: (v: string) => <Typography.Text code>{v}</Typography.Text>,
     },
     {
@@ -125,7 +140,7 @@ export default function Projects({ me }: { me: User }) {
       title: '状态',
       dataIndex: 'status',
       key: 'status',
-      width: 120,
+      width: 130,
       render: (s: string) => {
         const meta = STATUS_META[s] || { color: 'default', text: s || '未知' }
         return <Tag color={meta.color}>{meta.text}</Tag>
@@ -176,27 +191,79 @@ export default function Projects({ me }: { me: User }) {
   ]
 
   return (
-    <Card
-      title="项目列表"
-      extra={
-        <Space>
-          <Button icon={<ReloadOutlined />} onClick={load}>
-            刷新
-          </Button>
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => setOpen(true)}>
-            新建项目
-          </Button>
-        </Space>
-      }
-    >
-      <Table<Project>
-        rowKey="id"
-        columns={columns}
-        dataSource={rows}
-        loading={loading}
-        pagination={{ pageSize: 10, showSizeChanger: false }}
-        locale={{ emptyText: '暂无项目,点击右上角「新建项目」开始' }}
-      />
+    <div>
+      <div className="stat-grid">
+        <div className="stat-card">
+          <span className="stat-icon is-primary">
+            <FolderOpenOutlined />
+          </span>
+          <div>
+            <div className="stat-value">{stats.total}</div>
+            <div className="stat-label">全部项目</div>
+          </div>
+        </div>
+        <div className="stat-card">
+          <span className="stat-icon is-accent">
+            <SyncOutlined />
+          </span>
+          <div>
+            <div className="stat-value">{stats.active}</div>
+            <div className="stat-label">进行中</div>
+          </div>
+        </div>
+        <div className="stat-card">
+          <span className="stat-icon is-success">
+            <CheckCircleOutlined />
+          </span>
+          <div>
+            <div className="stat-value">{stats.deployed}</div>
+            <div className="stat-label">已生成应用</div>
+          </div>
+        </div>
+        <div className="stat-card">
+          <span className="stat-icon is-muted">
+            <FileTextOutlined />
+          </span>
+          <div>
+            <div className="stat-value">{stats.draft}</div>
+            <div className="stat-label">草稿</div>
+          </div>
+        </div>
+      </div>
+
+      <Card
+        title="项目列表"
+        extra={
+          <Space>
+            <Button icon={<ReloadOutlined />} onClick={load}>
+              刷新
+            </Button>
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => setOpen(true)}>
+              新建项目
+            </Button>
+          </Space>
+        }
+      >
+        <Table<Project>
+          rowKey="id"
+          columns={columns}
+          dataSource={rows}
+          loading={loading}
+          pagination={{ pageSize: 10, showSizeChanger: false }}
+          locale={{
+            emptyText: (
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description="还没有项目,创建第一个开始吧"
+              >
+                <Button type="primary" icon={<PlusOutlined />} onClick={() => setOpen(true)}>
+                  新建项目
+                </Button>
+              </Empty>
+            ),
+          }}
+        />
+      </Card>
 
       <Modal
         title="新建项目"
@@ -216,20 +283,6 @@ export default function Projects({ me }: { me: User }) {
             rules={[{ required: true, message: '请输入项目名称' }]}
           >
             <Input placeholder="例如:连锁门店管理系统" maxLength={120} />
-          </Form.Item>
-          <Form.Item
-            name="name"
-            label="项目标识(slug)"
-            tooltip="同时作为项目目录名,仅字母数字下划线,字母开头"
-            rules={[
-              { required: true, message: '请输入项目标识' },
-              {
-                pattern: /^[A-Za-z][A-Za-z0-9_]*$/,
-                message: '字母开头,只能包含字母、数字、下划线',
-              },
-            ]}
-          >
-            <Input placeholder="例如:store_system" maxLength={48} />
           </Form.Item>
           <Form.Item
             name="engineCode"
@@ -273,6 +326,6 @@ export default function Projects({ me }: { me: User }) {
         onClose={() => setSettingsFor(null)}
         onSaved={load}
       />
-    </Card>
+    </div>
   )
 }

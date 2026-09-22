@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """API 路由聚合。"""
-from . import (auth, users, projects, documents, pipeline, deploy, settings, system)  # noqa: F401
+from . import (auth, users, projects, documents, library, pipeline, deploy, settings, system, jobs)  # noqa: F401
 
 
 def include_routers(app):
@@ -9,6 +9,8 @@ def include_routers(app):
     app.include_router(users.router)
     app.include_router(projects.router)
     app.include_router(documents.router)
+    app.include_router(library.router)
     app.include_router(pipeline.router)
     app.include_router(deploy.router)
     app.include_router(settings.router)
+    app.include_router(jobs.router)

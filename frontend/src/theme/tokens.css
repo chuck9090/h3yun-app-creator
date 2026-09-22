@@ -1,0 +1,108 @@
+/*
+ * 设计令牌(Design Tokens)
+ * ------------------------------------------------------------------
+ * 配色原则:低饱和、低对比、微冷调,避免纯黑/纯白与高饱和亮蓝造成的视觉刺激。
+ * 浅色主题以冷灰蓝为底,深色主题以柔和 slate 为底(非纯黑)。
+ * 所有自定义样式一律引用本文件变量,不再散落硬编码色值。
+ */
+
+:root {
+  color-scheme: light;
+
+  /* 品牌主色:柔和靛蓝 */
+  --primary: #5b6ff0;
+  --primary-hover: #4c5fe0;
+  --primary-active: #4152d2;
+  --primary-soft: rgba(91, 111, 240, 0.1);
+  --primary-softer: rgba(91, 111, 240, 0.055);
+
+  /* 辅助色:青绿,用于科技感点缀 */
+  --accent: #2bb7a8;
+  --accent-soft: rgba(43, 183, 168, 0.12);
+
+  /* 语义色(降低饱和度) */
+  --success: #3aa76d;
+  --warning: #d99a2b;
+  --danger: #e05a5a;
+
+  /* 背景与表面 */
+  --bg: #f4f6fb;
+  --surface: #ffffff;
+  --surface-2: #f3f5fa;
+  --surface-3: #eaeef7;
+  --surface-glass: rgba(255, 255, 255, 0.72);
+  --scrim: rgba(28, 34, 52, 0.32);
+
+  /* 氛围光晕与网格 */
+  --glow-1: rgba(91, 111, 240, 0.12);
+  --glow-2: rgba(43, 183, 168, 0.09);
+  --grid-line: rgba(42, 48, 64, 0.032);
+
+  /* 描边 */
+  --border: #e5e8f1;
+  --border-strong: #d7dce9;
+
+  /* 文字:纯黑降一级,避免刺眼 */
+  --text-1: #2a3040;
+  --text-2: #5e6678;
+  --text-3: #98a0b3;
+  --text-on-primary: #ffffff;
+
+  /* 阴影:轻、扩散大,避免硬边 */
+  --shadow-sm: 0 1px 2px rgba(24, 32, 64, 0.05);
+  --shadow-md: 0 8px 24px rgba(24, 32, 64, 0.07);
+  --shadow-lg: 0 20px 48px rgba(24, 32, 64, 0.1);
+
+  /* 圆角与节奏 */
+  --radius-sm: 6px;
+  --radius: 10px;
+  --radius-lg: 12px;
+
+  /* 布局尺寸 */
+  --sider-w: 210px;
+  --header-h: 52px;
+
+  /* 过渡 */
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --dur: 200ms;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --primary: #7d8cff;
+  --primary-hover: #8f9cff;
+  --primary-active: #a0abff;
+  --primary-soft: rgba(125, 140, 255, 0.16);
+  --primary-softer: rgba(125, 140, 255, 0.08);
+
+  --accent: #4fd2c2;
+  --accent-soft: rgba(79, 210, 194, 0.14);
+
+  --success: #4bbf82;
+  --warning: #e0aa4a;
+  --danger: #ec6b6b;
+
+  --bg: #14171e;
+  --surface: #1b1f29;
+  --surface-2: #222733;
+  --surface-3: #2a303d;
+  --surface-glass: rgba(27, 31, 41, 0.74);
+  --scrim: rgba(0, 0, 0, 0.5);
+
+  --glow-1: rgba(125, 140, 255, 0.14);
+  --glow-2: rgba(79, 210, 194, 0.09);
+  --grid-line: rgba(214, 218, 228, 0.028);
+
+  --border: #2c3241;
+  --border-strong: #3a4152;
+
+  --text-1: #d6dae4;
+  --text-2: #99a1b3;
+  --text-3: #6a7285;
+  --text-on-primary: #171a22;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 10px 28px rgba(0, 0, 0, 0.36);
+  --shadow-lg: 0 24px 56px rgba(0, 0, 0, 0.44);
+}

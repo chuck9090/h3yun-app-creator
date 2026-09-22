@@ -109,7 +109,17 @@ export interface User {
   displayName: string
   role: Role
   active: boolean
+  avatar?: string
+  hasPassword?: boolean
+  activationPending?: boolean
+  activationCode?: string
   createdAt?: string
+}
+
+/** 用户头像 URL;未设置头像时返回空串(由调用方回退默认头像)。 */
+export function avatarUrl(u?: { id: number; avatar?: string } | null): string {
+  if (!u || !u.avatar) return ''
+  return `/api/users/${u.id}/avatar?v=${encodeURIComponent(u.avatar)}`
 }
 
 export interface Project {
@@ -148,6 +158,41 @@ export interface DocumentItem {
   summary?: string
   status?: string
   createdAt?: string
+}
+
+/** 资料库文档(挂在某份「资料」下)。 */
+export interface LibraryDoc {
+  id: number
+  libraryId?: number
+  filename: string
+  ext?: string
+  size?: number
+  status?: string
+  summary?: string
+  parsedLength?: number
+  createdAt?: string
+}
+
+/** 一份「资料」:名称唯一 + 描述;其下挂文档,夜间整理出 AI 分析(analysis)。 */
+export interface LibraryItem {
+  id: number
+  name: string
+  description: string
+  createdBy: number
+  createdAt?: string
+  updatedAt?: string
+  docCount: number
+  analysisReady: boolean
+  analysisAt?: string
+  analysisError?: string
+  analysis?: string
+  docs: LibraryDoc[]
+}
+
+/** 项目参考资料(按资料名称勾选)。 */
+export interface ProjectRefDocs {
+  ids: number[]
+  library: Pick<LibraryItem, 'id' | 'name' | 'description' | 'docCount' | 'analysisReady'>[]
 }
 
 /** ER 设计里的单个控件,字段名严格对齐后端 h3service.design。 */
@@ -460,18 +505,70 @@ export const COLUMN_TYPES = [
   'image',
 ]
 
+/** 项目内可上传的资料类型(「现有系统资料」已收敛到左侧「资料库」)。 */
 export const DOC_KINDS: { value: DocKind; label: string }[] = [
   { value: 'requirement', label: '需求文档' },
-  { value: 'existing_system', label: '现有系统资料' },
   { value: 'meeting', label: '会议纪要' },
   { value: 'other', label: '其他' },
 ]
 
+/** 全部 kind 的显示名(含历史数据 existing_system,用于列表标签展示)。 */
+export const DOC_KIND_LABELS: Record<string, string> = {
+  requirement: '需求文档',
+  existing_system: '现有系统资料',
+  meeting: '会议纪要',
+  other: '其他',
+}
+
 export const STATUS_META: Record<string, { color: string; text: string }> = {
   draft: { color: 'default', text: '草稿' },
   planned: { color: 'blue', text: '已出方案' },
-  flowcharted: { color: 'cyan', text: '已出流程图' },
+  flowcharted: { color: 'cyan', text: '已出业务流程图' },
   designed: { color: 'geekblue', text: '已设计' },
   deployed: { color: 'green', text: '已生成应用' },
   failed: { color: 'red', text: '失败' },
+}
+
+/* ------------------------------------------------------------------ 异步任务 */
+
+export type JobLevel = 'info' | 'success' | 'warning' | 'error'
+
+export interface JobProgressItem {
+  ts: string
+  level: JobLevel | string
+  text: string
+  pct?: number | null
+}
+
+/** 后端异步任务(jobs 表):用于展示进度明细,并在切页/刷新后恢复「处理中」。 */
+export interface Job<T = any> {
+  id: number
+  kind: string
+  title: string
+  projectId: number
+  userId: number
+  status: 'running' | 'done' | 'failed' | string
+  progress: JobProgressItem[]
+  result?: T | null
+  error?: string
+  detail?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface JobStartResponse<T = any> {
+  job: Job<T>
+  created: boolean
+}
+
+/** 项目任务列表(activeOnly=true 只返回运行中的任务)。 */
+export function getProjectJobs(
+  projectId: number,
+  activeOnly = false,
+): Promise<{ items: Job[] }> {
+  return get(`/api/projects/${projectId}/jobs`, { params: activeOnly ? { active: 1 } : {} })
+}
+
+export function getJob<T = any>(jobId: number): Promise<Job<T>> {
+  return get(`/api/jobs/${jobId}`)
 }

@@ -1,8 +1,26 @@
 import { useEffect, useState } from 'react'
+import type { ReactNode } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { App as AntApp, Card, Space, Spin, Steps, Tabs, Tag, Typography, Button } from 'antd'
 import {
+  App as AntApp,
+  Button,
+  Card,
+  Space,
+  Spin,
+  Steps,
+  Tabs,
+  Tag,
+  Tooltip,
+  Typography,
+} from 'antd'
+import {
+  ApartmentOutlined,
   ArrowLeftOutlined,
+  CloudUploadOutlined,
+  DeploymentUnitOutlined,
+  FileTextOutlined,
+  PartitionOutlined,
+  ProfileOutlined,
   ReloadOutlined,
   SettingOutlined,
   TeamOutlined,
@@ -18,10 +36,27 @@ import MembersModal from '../components/MembersModal'
 
 const STEP_KEYS = ['requirement', 'plan', 'flowchart', 'design', 'deploy']
 
+const STEP_LABELS: Record<string, string> = {
+  requirement: '需求',
+  plan: '方案',
+  flowchart: '业务流程图',
+  design: 'ER 设计',
+  deploy: '生成应用',
+}
+
+const STEP_ICONS: Record<string, ReactNode> = {
+  requirement: <FileTextOutlined />,
+  plan: <ProfileOutlined />,
+  flowchart: <PartitionOutlined />,
+  design: <ApartmentOutlined />,
+  deploy: <CloudUploadOutlined />,
+}
+
 const STATUS_ORDER = ['draft', 'planned', 'flowcharted', 'designed', 'deployed']
 
 function statusRank(status?: string): number {
-  const i = STATUS_ORDER.indexOf(status || 'draft')
+  const s = status === 'failed' ? 'designed' : status || 'draft'
+  const i = STATUS_ORDER.indexOf(s)
   return i < 0 ? 0 : i
 }
 
@@ -55,7 +90,7 @@ export default function ProjectWorkbench({ me }: { me: User }) {
 
   if (loading) {
     return (
-      <div style={{ textAlign: 'center', padding: 60 }}>
+      <div style={{ textAlign: 'center', padding: 40 }}>
         <Spin size="large" />
       </div>
     )
@@ -77,56 +112,86 @@ export default function ProjectWorkbench({ me }: { me: User }) {
   const rank = statusRank(project.status)
   const canManage = me.role === 'admin' || project.ownerId === me.id
 
-  const planGate = rank < statusRank('planned') ? '请先在「方案」步骤生成系统设计方案。' : undefined
-  const deployGate =
-    rank < statusRank('designed') ? '请先在「ER 设计」步骤生成并保存设计方案。' : undefined
+  const gates: Record<string, string | undefined> = {
+    requirement: undefined,
+    plan: undefined,
+    flowchart: rank < statusRank('planned') ? '请先完成「方案」阶段' : undefined,
+    design: rank < statusRank('flowcharted') ? '请先完成「业务流程图」阶段' : undefined,
+    deploy: rank < statusRank('designed') ? '请先完成「ER 设计」阶段' : undefined,
+  }
+
+  const stageText = (key: string) => {
+    const wrap = <span>{STEP_LABELS[key]}</span>
+    return gates[key] ? <Tooltip title={gates[key]}>{wrap}</Tooltip> : wrap
+  }
+
+  const stageTabLabel = (key: string) => (
+    <Space size={6}>
+      {STEP_ICONS[key]}
+      <span>{STEP_LABELS[key]}</span>
+    </Space>
+  )
+
+  const goStage = (key: string) => {
+    if (gates[key]) {
+      message.warning(gates[key] as string)
+      return
+    }
+    setActive(key)
+  }
 
   const items = [
     {
       key: 'requirement',
-      label: '需求',
+      label: stageTabLabel('requirement'),
+      disabled: !!gates.requirement,
       children: <RequirementStep projectId={project.id} canWrite={canWrite} />,
     },
     {
       key: 'plan',
-      label: '方案',
+      label: stageTabLabel('plan'),
+      disabled: !!gates.plan,
       children: (
         <PlanStep projectId={project.id} canWrite={canWrite} onGenerated={refreshAndGo} />
       ),
     },
     {
       key: 'flowchart',
-      label: '流程图',
+      label: stageTabLabel('flowchart'),
+      disabled: !!gates.flowchart,
       children: (
         <FlowchartStep
           projectId={project.id}
           canWrite={canWrite}
           onGoto={setActive}
-          gate={planGate}
+          onGenerated={() => refreshAndGo('flowchart')}
+          gate={gates.flowchart}
         />
       ),
     },
     {
       key: 'design',
-      label: 'ER 设计',
+      label: stageTabLabel('design'),
+      disabled: !!gates.design,
       children: (
         <DesignStep
           projectId={project.id}
           canWrite={canWrite}
           onGenerated={refreshAndGo}
-          gate={planGate}
+          gate={gates.design}
         />
       ),
     },
     {
       key: 'deploy',
-      label: '生成应用',
+      label: stageTabLabel('deploy'),
+      disabled: !!gates.deploy,
       children: (
         <DeployStep
           project={project}
           canWrite={canWrite}
           onDeployed={load}
-          gate={deployGate}
+          gate={gates.deploy}
         />
       ),
     },
@@ -134,69 +199,77 @@ export default function ProjectWorkbench({ me }: { me: User }) {
 
   return (
     <div>
-      <Card style={{ marginBottom: 16 }}>
-        <div className="page-title">
-          <Button icon={<ArrowLeftOutlined />} onClick={() => nav('/projects')}>
+      <Card className="workbench-hero" style={{ marginBottom: 12 }}>
+        <div className="hero-main">
+          <Button className="hero-back" icon={<ArrowLeftOutlined />} onClick={() => nav('/projects')}>
             返回
           </Button>
-          <Typography.Title level={4} style={{ margin: 0 }}>
-            {project.title}
-          </Typography.Title>
-          <Tag color={statusMeta.color}>{statusMeta.text}</Tag>
-          {project.appCode ? <Tag>应用编码:{project.appCode}</Tag> : null}
-          {!canWrite ? <Tag color="orange">只读</Tag> : null}
-          {canManage ? (
-            <Button
-              size="small"
-              icon={<TeamOutlined />}
-              style={{ marginLeft: 'auto' }}
-              onClick={() => setMembersOpen(true)}
-            >
-              成员授权
+
+          <span className="hero-mark">
+            <DeploymentUnitOutlined />
+          </span>
+
+          <div className="hero-text">
+            <div className="hero-title-row">
+              <Typography.Title level={4} className="hero-title">
+                {project.title}
+              </Typography.Title>
+              <Tag color={statusMeta.color}>{statusMeta.text}</Tag>
+              {!canWrite ? <Tag color="orange">只读</Tag> : null}
+            </div>
+            <div className="hero-meta">
+              <span className="meta-chip">
+                <span className="mono">{project.slug}</span>
+              </span>
+              {project.appCode ? (
+                <span className="meta-chip">
+                  应用编码 <span className="mono">{project.appCode}</span>
+                </span>
+              ) : null}
+              <span className="meta-chip">
+                阶段 {Math.min(rank + 1, STEP_KEYS.length)}/{STEP_KEYS.length}
+              </span>
+            </div>
+          </div>
+
+          <div className="hero-actions">
+            {canManage ? (
+              <Button size="small" icon={<TeamOutlined />} onClick={() => setMembersOpen(true)}>
+                成员授权
+              </Button>
+            ) : null}
+            {canManage ? (
+              <Button size="small" icon={<SettingOutlined />} onClick={() => setSettingsOpen(true)}>
+                项目设置
+              </Button>
+            ) : null}
+            <Button size="small" icon={<ReloadOutlined />} onClick={load}>
+              刷新
             </Button>
-          ) : null}
-          {canManage ? (
-            <Button
-              size="small"
-              icon={<SettingOutlined />}
-              style={canManage ? undefined : { marginLeft: 'auto' }}
-              onClick={() => setSettingsOpen(true)}
-            >
-              项目设置
-            </Button>
-          ) : null}
-          <Button
-            size="small"
-            icon={<ReloadOutlined />}
-            style={canManage ? undefined : { marginLeft: 'auto' }}
-            onClick={load}
-          >
-            刷新
-          </Button>
+          </div>
         </div>
-        <Space size="small" wrap>
-          <Typography.Text type="secondary">
-            项目标识:{project.slug}
-          </Typography.Text>
-        </Space>
       </Card>
 
-      <div className="workbench-steps">
+      <div className="stage-rail">
         <Steps
           size="small"
           current={Math.max(0, STEP_KEYS.indexOf(active))}
-          onChange={(i) => setActive(STEP_KEYS[i])}
-          items={[
-            { title: '需求' },
-            { title: '方案' },
-            { title: '流程图' },
-            { title: 'ER 设计' },
-            { title: '生成应用' },
-          ]}
+          onChange={(i) => goStage(STEP_KEYS[i])}
+          items={STEP_KEYS.map((key) => ({
+            title: stageText(key),
+            icon: STEP_ICONS[key],
+            disabled: !!gates[key],
+          }))}
         />
       </div>
 
-      <Tabs activeKey={active} onChange={setActive} items={items} />
+      <Tabs
+        className="workbench-tabs"
+        activeKey={active}
+        onChange={goStage}
+        items={items}
+        tabBarStyle={{ display: 'none' }}
+      />
 
       <ProjectSettingsModal
         open={settingsOpen}

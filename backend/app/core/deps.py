@@ -81,4 +81,7 @@ def user_public(u: dict) -> dict:
         return u
     return {"id": u["id"], "email": u["email"], "displayName": u.get("display_name", ""),
             "role": u.get("role", ""), "active": bool(u.get("active")),
+            "avatar": u.get("avatar", "") or "",
+            "hasPassword": bool(u.get("password_hash")),
+            "activationPending": bool(u.get("activation_token")),
             "createdAt": u.get("created_at", "")}

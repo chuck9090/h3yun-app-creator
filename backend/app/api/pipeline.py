@@ -11,6 +11,8 @@
 
 统一响应 {ok,data,message};写操作校验项目写权限。
 """
+import json
+
 from fastapi import APIRouter, Depends
 
 from .. import engine_bridge as EB
@@ -20,6 +22,8 @@ from ..db import database as db
 from ..schemas import pipeline as S
 from ..services import design as design_service
 from ..services import flowchart as flowchart_service
+from ..services import jobs as jobs_service
+from ..services import llm as llm_service
 from ..services import plan as plan_service
 
 router = APIRouter(prefix="/api", tags=["pipeline"])
@@ -72,23 +76,115 @@ def get_plan(id: int, user=Depends(deps.require_user)):
     return _ok({"markdown": storage.get_plan(p["slug"])})
 
 
-def _reference_docs(pid):
-    """本项目上传的全部文档(含「已有系统」)—— 方案/表单结构的**参考资料来源**。"""
-    docs = db.list_documents(pid)
-    return [d for d in docs if d.get("parsed_text")]
+def _selected_library_ids(p):
+    try:
+        ids = json.loads(p.get("ref_items") or "[]")
+    except Exception:
+        return []
+    out = []
+    for x in ids:
+        try:
+            out.append(int(x))
+        except Exception:
+            continue
+    return out
+
+
+def _reference_material(p):
+    """参考资料素材 = (本项目可抽取文档, 勾选的资料库资料正文)。
+
+    项目文档走结构化抽取(字段无损、数据行限量);资料库资料已是 LLM 整理内容,直接取用。
+    """
+    from ..services import library as library_service
+    docs = [d for d in db.list_documents(p["id"]) if d.get("stored_path")]
+    ids = _selected_library_ids(p)
+    lib_parts = []
+    if ids:
+        for it in db.list_library_items():
+            if it["id"] in ids:
+                txt = library_service.library_context(it)
+                if txt.strip():
+                    lib_parts.append(txt)
+    return docs, "\n\n".join(lib_parts)
+
+
+def _library_view(it):
+    return {"id": it["id"], "name": it.get("name", ""),
+            "description": it.get("description", ""),
+            "docCount": len(db.list_library_documents(it["id"])),
+            "analysisReady": bool((it.get("analysis") or "").strip())}
+
+
+@router.get("/projects/{id}/ref-docs")
+def get_ref_docs(id: int, user=Depends(deps.require_user)):
+    """本项目参考的资料:已勾选 id + 可选资料清单(按名称勾选)。"""
+    p = deps.get_project(id, user)
+    return _ok({"ids": _selected_library_ids(p),
+                "library": [_library_view(it) for it in db.list_library_items()]})
+
+
+@router.put("/projects/{id}/ref-docs")
+def put_ref_docs(id: int, body: S.RefDocsIn, user=Depends(deps.require_user)):
+    p = deps.get_project(id, user, write=True)
+    valid = {it["id"] for it in db.list_library_items()}
+    ids = []
+    for x in (body.ids or []):
+        try:
+            n = int(x)
+        except Exception:
+            continue
+        if n in valid and n not in ids:
+            ids.append(n)
+    db.update_project(p["id"], ref_items=json.dumps(ids))
+    db.add_event(p["id"], "requirement", "更新参考资料(%d 份)" % len(ids))
+    return _ok({"ids": ids})
 
 
 @router.post("/projects/{id}/plan/generate")
 def generate_plan(id: int, body: S.GenerateIn = None, user=Depends(deps.require_user)):
     p = deps.get_project(id, user, write=True)
     instruction = (body.instruction if body else None)
-    requirement = storage.requirement_text(p["slug"])
-    documents_text = storage.collect_documents_text(p["slug"], _reference_docs(p["id"]))
-    res = plan_service.generate_plan(requirement, documents_text, instruction)
-    storage.set_plan(p["slug"], res["markdown"])
-    db.update_project(p["id"], status="planned")
-    db.add_event(p["id"], "plan", "生成系统设计方案(provider=%s)" % res.get("provider"))
-    return _ok({"markdown": res["markdown"], "provider": res.get("provider", "heuristic")})
+    slug, pid = p["slug"], p["id"]
+
+    def runner(progress):
+        from ..services import context as ctx
+        progress("读取需求与参考资料清单", pct=3)
+        requirement = storage.requirement_text(slug)
+        docs, library_text = _reference_material(p)
+        provider = llm_service.get_provider()
+        progress("开始结构化抽取参考资料(共 %d 个文件,已抽取过的会直接复用缓存)"
+                 % len(docs), pct=5)
+        reference = ctx.build_reference(docs, provider, progress=progress, pct_range=(6, 55))
+        progress("组装上下文:模式=%s,约 %d token(预算 %d)" % (
+            reference["mode"], reference["totalTokens"], ctx.C.CTX_TOKEN_BUDGET), pct=58)
+        ref_text = reference["text"]
+        if reference["mode"].startswith(ctx.MODE_CATALOG):
+            resolved, used = ctx.resolve_catalog(provider, reference, requirement, progress)
+            ref_text = resolved
+            progress("目录模式:已按需纳入 %d 份资料" % len(used), pct=70)
+        library_text, ref_text, fit_note = ctx.fit_reference(library_text, ref_text)
+        blocks = [b for b in (library_text, ref_text) if b and b.strip()]
+        reference_text = "\n\n".join(blocks)
+        if fit_note:
+            progress("提示:%s" % fit_note, pct=70, level="warning")
+        for note in reference["notes"][:6]:
+            progress("提示:%s" % note, pct=70, level="warning")
+
+        res = plan_service.generate_plan(requirement, reference_text, instruction,
+                                         progress=progress, provider=provider)
+        progress("保存方案(provider=%s)" % res.get("provider"), pct=95)
+        storage.set_plan(slug, res["markdown"])
+        db.update_project(pid, status="planned")
+        db.add_event(pid, "plan", "生成系统设计方案(provider=%s)" % res.get("provider"))
+        return {"markdown": res["markdown"], "provider": res.get("provider", "heuristic"),
+                "referenceMode": reference["mode"],
+                "referenceTokens": reference["totalTokens"],
+                "referenceFiles": len(docs),
+                "_detail": "provider=%s, 参考模式=%s, 约 %d token"
+                           % (res.get("provider"), reference["mode"], reference["totalTokens"])}
+
+    job, created = jobs_service.submit(pid, user["id"], "plan", runner)
+    return _ok({"job": job, "created": created})
 
 
 @router.put("/projects/{id}/plan")
@@ -109,12 +205,43 @@ def get_flowchart(id: int, user=Depends(deps.require_user)):
 @router.post("/projects/{id}/flowchart/generate")
 def generate_flowchart(id: int, body: S.GenerateIn = None, user=Depends(deps.require_user)):
     p = deps.get_project(id, user, write=True)
-    res = flowchart_service.generate_flowchart(storage.get_plan(p["slug"]),
-                                               storage.requirement_text(p["slug"]))
-    storage.set_flowchart(p["slug"], res["mermaid"])
-    db.update_project(p["id"], status="flowcharted")
-    db.add_event(p["id"], "flowchart", "生成业务流程图(provider=%s)" % res.get("provider"))
-    return _ok({"mermaid": res["mermaid"], "provider": res.get("provider", "heuristic")})
+    slug, pid = p["slug"], p["id"]
+
+    def runner(progress):
+        from ..services import context as ctx
+        progress("读取系统设计方案、需求与参考资料清单", pct=3)
+        requirement = storage.requirement_text(slug)
+        docs, library_text = _reference_material(p)
+        provider = llm_service.get_provider()
+        progress("结构化抽取参考资料(共 %d 个文件,已抽取过的会直接复用缓存)" % len(docs), pct=5)
+        reference = ctx.build_reference(docs, provider, progress=progress, pct_range=(6, 55))
+        progress("组装上下文:模式=%s,约 %d token(预算 %d)" % (
+            reference["mode"], reference["totalTokens"], ctx.C.CTX_TOKEN_BUDGET), pct=58)
+        ref_text = reference["text"]
+        if reference["mode"].startswith(ctx.MODE_CATALOG):
+            resolved, used = ctx.resolve_catalog(provider, reference, requirement, progress)
+            ref_text = resolved
+            progress("目录模式:已按需纳入 %d 份资料" % len(used), pct=70)
+        library_text, ref_text, fit_note = ctx.fit_reference(library_text, ref_text)
+        blocks = [b for b in (library_text, ref_text) if b and b.strip()]
+        reference_text = "\n\n".join(blocks)
+        if fit_note:
+            progress("提示:%s" % fit_note, pct=70, level="warning")
+        for note in reference["notes"][:6]:
+            progress("提示:%s" % note, pct=70, level="warning")
+        progress("调用大模型生成业务流程图" if getattr(provider, "available", False)
+                 else "未配置大模型,使用启发式生成流程图", pct=75)
+        res = flowchart_service.generate_flowchart(storage.get_plan(slug), requirement,
+                                                   reference_text)
+        progress("流程图生成完成(provider=%s),正在保存" % res.get("provider"), pct=90)
+        storage.set_flowchart(slug, res["mermaid"])
+        db.update_project(pid, status="flowcharted")
+        db.add_event(pid, "flowchart", "生成业务流程图(provider=%s)" % res.get("provider"))
+        return {"mermaid": res["mermaid"], "provider": res.get("provider", "heuristic"),
+                "_detail": "provider=%s" % res.get("provider")}
+
+    job, created = jobs_service.submit(pid, user["id"], "flowchart", runner)
+    return _ok({"job": job, "created": created})
 
 
 @router.put("/projects/{id}/flowchart")
@@ -135,22 +262,54 @@ def get_design(id: int, user=Depends(deps.require_user)):
 @router.post("/projects/{id}/design/generate")
 def generate_design(id: int, body: S.GenerateIn = None, user=Depends(deps.require_user)):
     p = deps.get_project(id, user, write=True)
-    documents_text = storage.collect_documents_text(p["slug"], _reference_docs(p["id"]))
-    res = design_service.generate_design(storage.get_plan(p["slug"]),
-                                         storage.requirement_text(p["slug"]),
-                                         documents_text)
-    design = {"sheets": res.get("sheets") or [],
-              "dicts": res.get("dicts") or {},
-              "groups": res.get("groups") or [],
-              "automations": res.get("automations") or []}
-    design, check, error = _sync(p["slug"], p.get("app_code", ""), design)
-    storage.set_design(p["slug"], design)
-    db.update_project(p["id"], status="designed")
-    db.add_event(p["id"], "design",
-                 "生成 ER 结构(provider=%s, %d 表/%d 自动化)"
-                 % (res.get("provider", "heuristic"), len(design["sheets"]),
-                    len(design.get("automations") or [])))
-    return _ok(_design_payload(design, res.get("provider", "heuristic"), check, error))
+    slug, pid = p["slug"], p["id"]
+    app_code = p.get("app_code", "")
+
+    def runner(progress):
+        from ..services import context as ctx
+        progress("读取方案、需求与参考资料清单", pct=3)
+        docs, library_text = _reference_material(p)
+        provider = llm_service.get_provider()
+        progress("结构化抽取参考资料(共 %d 个文件)" % len(docs), pct=5)
+        reference = ctx.build_reference(docs, provider, progress=progress, pct_range=(6, 55))
+        progress("组装上下文:模式=%s,约 %d token" % (reference["mode"], reference["totalTokens"]),
+                 pct=58)
+        ref_text = reference["text"]
+        if reference["mode"].startswith(ctx.MODE_CATALOG):
+            resolved, used = ctx.resolve_catalog(provider, reference, storage.requirement_text(slug),
+                                                 progress)
+            ref_text = resolved
+            progress("目录模式:已按需纳入 %d 份资料" % len(used), pct=70)
+        library_text, ref_text, fit_note = ctx.fit_reference(library_text, ref_text)
+        blocks = [b for b in (library_text, ref_text) if b and b.strip()]
+        reference_text = "\n\n".join(blocks)
+        if fit_note:
+            progress("提示:%s" % fit_note, pct=70, level="warning")
+        for note in reference["notes"][:6]:
+            progress("提示:%s" % note, pct=70, level="warning")
+
+        res = design_service.generate_design(storage.get_plan(slug),
+                                             storage.requirement_text(slug),
+                                             reference_text, progress=progress, provider=provider)
+        design = {"sheets": res.get("sheets") or [],
+                  "dicts": res.get("dicts") or {},
+                  "groups": res.get("groups") or [],
+                  "automations": res.get("automations") or []}
+        progress("落盘表单/自动化定义并做离线校验(%d 张表)" % len(design["sheets"]), pct=94)
+        design, check, error = _sync(slug, app_code, design)
+        storage.set_design(slug, design)
+        db.update_project(pid, status="designed")
+        db.add_event(pid, "design",
+                     "生成 ER 结构(provider=%s, %d 表/%d 自动化)"
+                     % (res.get("provider", "heuristic"), len(design["sheets"]),
+                        len(design.get("automations") or [])))
+        payload = _design_payload(design, res.get("provider", "heuristic"), check, error)
+        payload["_detail"] = "provider=%s, %d 表, 参考模式=%s" % (
+            res.get("provider", "heuristic"), len(design["sheets"]), reference["mode"])
+        return payload
+
+    job, created = jobs_service.submit(pid, user["id"], "design", runner)
+    return _ok({"job": job, "created": created})
 
 
 @router.put("/projects/{id}/design")

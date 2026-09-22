@@ -1,4 +1,4 @@
-# h3factory 前端(独立工程)
+# h3yun-app-creator 前端(独立工程)
 
 React 18 + TypeScript + Vite + Ant Design 5。**前后端分离**:本工程只通过 HTTP API 与后端通信
 (`/api`,开发期经 Vite 代理到 `http://localhost:8000`),不加载任何配置文件。

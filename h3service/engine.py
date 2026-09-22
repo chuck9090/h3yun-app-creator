@@ -17,8 +17,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 # 运行数据目录(代码与数据分离):仓库内只保留代码;DB/上传件/项目工作区/
-# 知识库产物/凭据都放这里。默认 <root>/data,可用 H3F_DATA_DIR 覆盖。
-DATA_DIR = os.environ.get("H3F_DATA_DIR") or os.path.join(ROOT, "data")
+# 知识库产物/凭据都放这里。默认 <root>/data,可用 H3AC_DATA_DIR 覆盖。
+DATA_DIR = os.environ.get("H3AC_DATA_DIR") or os.path.join(ROOT, "data")
 PROJECTS = os.path.join(DATA_DIR, "projects")
 KNOWLEDGE = os.path.join(DATA_DIR, "knowledge")
 CONFIG = os.path.join(DATA_DIR, "config.json")

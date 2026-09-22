@@ -18,7 +18,7 @@ import httpx
 
 BACKEND = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ROOT = os.path.dirname(BACKEND)
-PORT = int(os.environ.get("H3F_SMOKE_PORT", "8899"))
+PORT = int(os.environ.get("H3AC_SMOKE_PORT", "8899"))
 BASE = "http://127.0.0.1:%d" % PORT
 ADMIN = ("smoke_admin@local", "smoke12345")
 PWD = os.path.dirname(os.path.abspath(__file__))
@@ -30,6 +30,19 @@ def fake_token(engine="SMOKEENG"):
     return "%s.%s.sig" % (b64({"alg": "none"}),
                           b64({"enginecode": engine, "exp": 9999999999,
                                "loginname": "smoke"}))
+
+
+def run_job(c, resp):
+    """生成/核对接口是异步任务:POST 返回 {job,created},轮询至终态并返回 job(含 result)。"""
+    data = (resp.json() or {}).get("data") or {}
+    jid = (data.get("job") or {}).get("id")
+    job = {}
+    for _ in range(600):
+        job = c.get("/api/jobs/%s" % jid).json().get("data") or {}
+        if job.get("status") != "running":
+            return job
+        time.sleep(0.2)
+    return job
 
 
 # 参考系统设计(表/字段名与冒烟需求文本同词,便于启发式匹配)
@@ -54,9 +67,9 @@ REF_DESIGN = {
 
 def main():
     env = dict(os.environ)
-    env["H3F_ADMIN_EMAIL"] = ADMIN[0]
-    env["H3F_ADMIN_PASSWORD"] = ADMIN[1]
-    env["H3F_SMOKE"] = "1"
+    env["H3AC_ADMIN_EMAIL"] = ADMIN[0]
+    env["H3AC_ADMIN_PASSWORD"] = ADMIN[1]
+    env["H3AC_SMOKE"] = "1"
     proc = subprocess.Popen([sys.executable, "-X", "utf8", "-m", "uvicorn",
                              "app.main:app", "--host", "127.0.0.1", "--port", str(PORT),
                              "--log-level", "warning"],
@@ -120,20 +133,24 @@ def main():
 
             c.put("/api/projects/%d/requirement" % pid,
                   json={"html": "<p>门店合同项目系统</p>", "text": "门店 合同 项目 人员"})
-            r = c.post("/api/projects/%d/plan/generate" % pid, json={}).json()
-            chk("plan/generate", r.get("ok") and len(r["data"]["markdown"]) > 100,
-                "provider=%s" % r["data"].get("provider"))
+            job = run_job(c, c.post("/api/projects/%d/plan/generate" % pid, json={}))
+            md = (job.get("result") or {}).get("markdown") or ""
+            chk("plan/generate", job.get("status") == "done" and len(md) > 100,
+                "provider=%s" % (job.get("result") or {}).get("provider"))
+            chk("plan 进度含百分比", any(isinstance(p.get("pct"), (int, float))
+                                     for p in job.get("progress") or []),
+                "%d 步" % len(job.get("progress") or []))
 
-            r = c.post("/api/projects/%d/flowchart/generate" % pid, json={}).json()
-            mmd = r["data"]["mermaid"]
+            job = run_job(c, c.post("/api/projects/%d/flowchart/generate" % pid, json={}))
+            mmd = (job.get("result") or {}).get("mermaid") or ""
             chk("flowchart/generate", mmd.strip().lower().startswith(("flowchart", "graph")),
                 mmd.splitlines()[0] if mmd else "")
 
-            r = c.post("/api/projects/%d/design/generate" % pid, json={}).json()
-            chk("design/generate", r.get("ok") and r["data"]["sheets"],
-                "sheets=%d err=%s" % (len(r["data"].get("sheets", [])),
-                                      (r["data"].get("error") or "")[:40]))
-            design = r["data"]
+            job = run_job(c, c.post("/api/projects/%d/design/generate" % pid, json={}))
+            design = job.get("result") or {}
+            chk("design/generate", job.get("status") == "done" and design.get("sheets"),
+                "sheets=%d err=%s" % (len(design.get("sheets", [])),
+                                      (design.get("error") or "")[:40]))
             sheets = design.get("sheets") or []
             if sheets:
                 # 同表自更新:match/set 引用的字段都在该表内,语义有效

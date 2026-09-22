@@ -13,7 +13,7 @@ function ErNodeInner({ data, selected }: NodeProps) {
   const d = (data || {}) as ErNodePayload
   const fields = d.fields || []
   return (
-    <div className="er-node" style={selected ? { borderColor: '#1677ff' } : undefined}>
+    <div className={`er-node${selected ? ' is-selected' : ''}`}>
       <div className="er-node-title">
         <span>{d.title || d.key || '未命名'}</span>
         {d.key ? <span className="er-node-key">{d.key}</span> : null}

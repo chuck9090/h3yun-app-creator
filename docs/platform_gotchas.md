@@ -164,7 +164,7 @@
 - `MappingField` = **存值列**:选中记录后把源行该列文本存入本字段(试验存 code 列;想保持老口径可存 name 列——存值是选列不是锁死)。
 - `AssociationFilter` 规则:右值裸写本表单字段编码做动态引用,**级联就靠它**(切上级 → 选项池按条件实时过滤)。
 - 切 Association 后 Properties `OptionalValues`/FormLayout `DefaultItems` 残留创建时占位选项(选项1/2/3)——UI 不清空;**工厂直建不带**(OptionalValues=""/DefaultItems=[],干净)——引擎对残留的取舍未单独观察,**大类别为空时的选项池表现仍待确认**。
-- **h3factory DSL 已支持(同日落)**:sheets JSON dropdown 声明 `assoc/assocField/filter`(细则见 schema_doc「联动下拉」章节),构建自动落三处 + verify 规整比对;filter 只开放 `=`/`contains` 实证集合,radio/checkbox_list/子表列内 assoc 直接报错。
+- **h3yun-app-creator DSL 已支持(同日落)**:sheets JSON dropdown 声明 `assoc/assocField/filter`(细则见 schema_doc「联动下拉」章节),构建自动落三处 + verify 规整比对;filter 只开放 `=`/`contains` 实证集合,radio/checkbox_list/子表列内 assoc 直接报错。
 - **实证进展(同日晚第二轮)**:AND 连接多条件成立;checkbox_list 多值列(分号串)的"包含"匹配用函数式 `CONTAINS({源表.字段},{本表控件})`,第二参数同样支持动态控件引用;一条规则可同时引用多个本表控件。UI 会在 Rule 文本里插 NBSP、给 `==`/`!=` 两侧加空格(与 DisplayRule 同款漂移,生成/比对先规整)。
 - **运行实证(同日,类型试验 运行时)**:过滤条件 `dictcategory=="特性代码" AND CONTAINS(applyto,{大类别下拉})` **运行时真实生效**——切 磁性材料 下拉出 4 条、电子料 出 13 条,与字典表行数一致;常量等值 / AND / CONTAINS + 动态引用全部按预期对源表执行。机制可下生产(料号申请表的大类别→特性代码/品类级联直接照此形态配)。
 - **未实证(剩 2 项,非阻塞)**:①存值口径——MappingField=code 是否真存 code 文本(需实际保存一条记录才能钉死,本方案不做数据写入,列此存疑);②重开记录回显(显示列 vs 存值列)。

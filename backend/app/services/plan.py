@@ -13,6 +13,7 @@ import re
 
 from ..core import config as C
 from . import llm
+from .context import REFERENCE_GUARD
 
 _SYSTEM = """你是氚云低代码平台的企业系统架构师,负责把「粗业务需求」整理成一份可评审的《系统设计方案》(Markdown)。
 请严格遵循以下设计 SOP:
@@ -27,6 +28,8 @@ _SYSTEM = """你是氚云低代码平台的企业系统架构师,负责把「粗
 硬性约束:
 - 字段 key 必须字母开头、只含字母数字、无下划线,且避开平台自带编码
   (Name/SeqNo/CreatedTime/CreatedBy/ModifiedTime/ModifiedBy/OwnerId/OwnerDeptId/Status/State/ObjectId/WorkflowInstanceId);
+- 【业务需求】是本方案唯一的需求来源;【设计知识库】/【参考资料】只用于复用字段命名、口径与
+  通用设计惯例、补齐与本次需求相关的表,**不得**因参考资料里有而引入与本次需求无关的表/模块;
 - 输出纯 Markdown,严格使用下面的章节结构,不要输出与方案无关的寒暄。
 
 # 系统设计方案
@@ -58,18 +61,27 @@ def _read_knowledge_head(name, max_lines):
 
 
 def _knowledge_digest(max_lines_per_file=120):
+    # F3 双保险:生成前按当前 DB 现算 library.md,避免读到已删除资料
+    try:
+        from .library import render_library_digest
+        render_library_digest()
+    except Exception:
+        pass
     parts = []
-    for name in ("corpus.md", "patterns.md"):
+    # 全局资料库(用户上传的已有系统资料)优先,其次是已建项目语料
+    for name in ("library.md", "corpus.md", "patterns.md"):
         txt = _read_knowledge_head(name, max_lines_per_file)
         if txt:
             parts.append("### 知识库文件 %s\n%s" % (name, txt))
-    return "\n\n".join(parts) or "(暂无参考语料:可在本项目上传已有系统/需求资料)"
+    return "\n\n".join(parts) or "(暂无参考语料:可在「资料库」上传已有系统资料)"
 
 
-def _user_prompt(requirement_text, documents_text, instruction):
-    parts = ["【业务需求】\n%s" % (requirement_text or "(空)")]
-    if documents_text and documents_text.strip():
-        parts.append("【补充文档(已解析文本)】\n%s" % documents_text.strip())
+def _user_prompt(requirement_text, reference_text, instruction):
+    parts = ["【业务需求(本项目的唯一需求来源)】\n%s" % (requirement_text or "(空)")]
+    if reference_text and reference_text.strip():
+        parts.append("【参考资料(非本项目需求,仅供字段/口径/设计惯例参考)】\n%s"
+                     % reference_text.strip())
+        parts.append(REFERENCE_GUARD)
     if instruction and instruction.strip():
         parts.append("【额外指令】\n%s" % instruction.strip())
     return "\n\n".join(parts)
@@ -154,16 +166,26 @@ def _heuristic_plan(requirement_text):
     return "\n".join(lines).strip()
 
 
-def generate_plan(requirement_text: str, documents_text: str = "",
-                  instruction: str = None) -> dict:
-    provider = llm.get_provider()
+def generate_plan(requirement_text: str, reference_text: str = "",
+                  instruction: str = None, progress=None, provider=None) -> dict:
+    def _p(msg, pct=None, level="info"):
+        if progress:
+            progress(msg, pct=pct, level=level)
+
+    provider = provider or llm.get_provider()
     if getattr(provider, "available", False):
+        _p("组装提示词(设计 SOP + 知识库节选)", pct=72)
         try:
             system = _SYSTEM + "\n\n【设计知识库(节选)】\n" + _knowledge_digest()
-            raw = provider.complete(system, _user_prompt(requirement_text, documents_text, instruction))
+            _p("调用大模型生成系统设计方案…", pct=78)
+            raw = provider.complete(system, _user_prompt(requirement_text, reference_text, instruction))
+            _p("解析模型输出", pct=92)
             md = _strip_fence(raw)
             if md and len(md) >= 20:
                 return {"markdown": md, "provider": provider.name}
-        except Exception:
-            pass
+            _p("模型输出过短,回退启发式草案", pct=94, level="warning")
+        except Exception as e:
+            _p("大模型调用失败(%s),回退启发式草案" % str(e)[:160], pct=94, level="warning")
+    else:
+        _p("未配置大模型,使用启发式知识库生成草案", pct=78, level="warning")
     return {"markdown": _heuristic_plan(requirement_text), "provider": "heuristic"}

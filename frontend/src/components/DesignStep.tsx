@@ -7,6 +7,7 @@ import {
   Collapse,
   Empty,
   Input,
+  Modal,
   Select,
   Space,
   Switch,
@@ -17,6 +18,8 @@ import {
 } from 'antd'
 import {
   DeleteOutlined,
+  FullscreenExitOutlined,
+  FullscreenOutlined,
   PlusOutlined,
   ReloadOutlined,
   RobotOutlined,
@@ -36,6 +39,9 @@ import {
   type Node,
 } from '@xyflow/react'
 import ErNode from './ErNode'
+import JobProgressPanel from './JobProgressPanel'
+import { useJob } from '../hooks/useJob'
+import { useTheme } from '../theme/ThemeContext'
 import {
   Automation,
   COLUMN_TYPES,
@@ -96,6 +102,7 @@ export default function DesignStep({
   gate?: string
 }) {
   const { message } = AntApp.useApp()
+  const { dark } = useTheme()
   const [sheets, setSheets] = useState<Sheet[]>([])
   const [dicts, setDicts] = useState<Record<string, any[]>>({})
   const [groups, setGroups] = useState<any[]>([])
@@ -103,9 +110,9 @@ export default function DesignStep({
   const [edges, setEdges] = useState<ErEdge[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [generating, setGenerating] = useState(false)
   const [check, setCheck] = useState<any>(null)
   const [checking, setChecking] = useState(false)
+  const [fullscreen, setFullscreen] = useState(false)
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([])
   const [flowEdges, setFlowEdges, onEdgesChange] = useEdgesState<Edge>([])
@@ -137,6 +144,30 @@ export default function DesignStep({
     }
   }, [projectId, message, loadEr])
 
+  const { job, running, start } = useJob(
+    projectId,
+    'design',
+    async (j) => {
+      const r: any = j.result
+      if (r && Array.isArray(r.sheets)) {
+        setSheets(normalizeSheets(r.sheets))
+        setDicts(r.dicts || {})
+        setGroups(Array.isArray(r.groups) ? r.groups : [])
+        setAutomations(normalizeAutomations(r.automations))
+        posRef.current = {}
+      }
+      setCheck(r?.check ?? (r?.error ? { error: r.error } : null))
+      if (r?.error) {
+        message.error(`生成失败:${String(r.error).split('\n')[0].slice(0, 200)}`)
+      } else {
+        message.success('ER 设计已生成')
+        onGenerated?.('design')
+      }
+      await loadEr()
+    },
+    (j) => message.error(`生成失败:${j.error || '未知错误'}`),
+  )
+
   useEffect(() => {
     load()
   }, [load])
@@ -164,11 +195,11 @@ export default function DesignStep({
           label: e.label || e.field || '',
           type: 'smoothstep',
           animated: e.kind === '联动',
-          style: { stroke: '#1677ff' },
+          style: { stroke: dark ? '#7d8cff' : '#5b6ff0' },
           markerEnd: { type: MarkerType.ArrowClosed },
         })),
     )
-  }, [edges, sheets, setFlowEdges])
+  }, [edges, sheets, setFlowEdges, dark])
 
   /* -------------------------------------------------- 编辑操作 */
   function updateSheet(idx: number, patch: Partial<Sheet>) {
@@ -289,28 +320,10 @@ export default function DesignStep({
   }
 
   async function generate() {
-    setGenerating(true)
     try {
-      const r = await post<any>(`/api/projects/${projectId}/design/generate`, {})
-      if (Array.isArray(r?.sheets)) {
-        setSheets(normalizeSheets(r.sheets))
-        setDicts(r.dicts || {})
-        setGroups(Array.isArray(r.groups) ? r.groups : [])
-        setAutomations(normalizeAutomations(r.automations))
-        posRef.current = {}
-      }
-      setCheck(r?.check ?? (r?.error ? { error: r.error } : null))
-      if (r?.error) {
-        message.error(`生成失败:${String(r.error).split('\n')[0].slice(0, 200)}`)
-      } else {
-        message.success('ER 设计已生成')
-        onGenerated?.('design')
-      }
-      await loadEr()
+      await start(() => post<any>(`/api/projects/${projectId}/design/generate`, {}))
     } catch (e) {
       message.error(errMsg(e))
-    } finally {
-      setGenerating(false)
     }
   }
 
@@ -340,6 +353,25 @@ export default function DesignStep({
     }
   }
 
+  const flowEl = (
+    <ReactFlow
+      nodes={nodes}
+      edges={flowEdges}
+      nodeTypes={nodeTypes}
+      onNodesChange={onNodesChange}
+      onEdgesChange={onEdgesChange}
+      onNodeDragStop={(_, n) => {
+        posRef.current[n.id] = n.position
+      }}
+      fitView
+      proOptions={{ hideAttribution: true }}
+    >
+      <Background color={dark ? '#2c3241' : '#d7dce9'} gap={22} />
+      <Controls />
+      <MiniMap pannable zoomable />
+    </ReactFlow>
+  )
+
   return (
     <div>
       <Card
@@ -349,13 +381,21 @@ export default function DesignStep({
             <Button
               type="primary"
               icon={<RobotOutlined />}
-              loading={generating}
-              disabled={!canWrite || !!gate}
+              loading={running}
+              disabled={!canWrite || !!gate || running}
               onClick={generate}
             >
               生成 ER 图
             </Button>
-            <Button icon={<SaveOutlined />} loading={saving} disabled={!canWrite} onClick={save}>
+            {sheets.length ? (
+              <Button
+                icon={fullscreen ? <FullscreenExitOutlined /> : <FullscreenOutlined />}
+                onClick={() => setFullscreen((v) => !v)}
+              >
+                {fullscreen ? '退出全屏' : '全屏'}
+              </Button>
+            ) : null}
+            <Button icon={<SaveOutlined />} loading={saving} disabled={!canWrite || running} onClick={save}>
               保存设计
             </Button>
             <Button icon={<ReloadOutlined />} loading={checking} onClick={runCheck}>
@@ -374,36 +414,20 @@ export default function DesignStep({
             description={gate}
           />
         ) : null}
+        <JobProgressPanel job={job} />
         {loading ? (
-          <div style={{ textAlign: 'center', padding: 40 }}>
+          <div style={{ textAlign: 'center', padding: 24 }}>
             <Typography.Text type="secondary">加载中...</Typography.Text>
           </div>
         ) : sheets.length ? (
-          <div className="er-flow-wrap">
-            <ReactFlow
-              nodes={nodes}
-              edges={flowEdges}
-              nodeTypes={nodeTypes}
-              onNodesChange={onNodesChange}
-              onEdgesChange={onEdgesChange}
-              onNodeDragStop={(_, n) => {
-                posRef.current[n.id] = n.position
-              }}
-              fitView
-              proOptions={{ hideAttribution: true }}
-            >
-              <Background />
-              <Controls />
-              <MiniMap pannable zoomable />
-            </ReactFlow>
-          </div>
+          <div className="er-flow-wrap">{flowEl}</div>
         ) : (
           <Empty description="尚未生成 ER 设计">
             <Button
               type="primary"
               icon={<RobotOutlined />}
-              loading={generating}
-              disabled={!canWrite || !!gate}
+              loading={running}
+              disabled={!canWrite || !!gate || running}
               onClick={generate}
             >
               生成 ER 图
@@ -459,7 +483,7 @@ export default function DesignStep({
 
       {sheets.length ? (
         <Tabs
-          style={{ marginTop: 16 }}
+          style={{ marginTop: 12 }}
           defaultActiveKey="sheets"
           items={[
             {
@@ -695,6 +719,22 @@ export default function DesignStep({
           ]}
         />
       ) : null}
+
+      <Modal
+        open={fullscreen}
+        onCancel={() => setFullscreen(false)}
+        footer={null}
+        width="95%"
+        title="ER 图"
+        styles={{ body: { padding: 12 } }}
+      >
+        <Space style={{ marginBottom: 12 }}>
+          <Button icon={<FullscreenExitOutlined />} onClick={() => setFullscreen(false)}>
+            退出全屏
+          </Button>
+        </Space>
+        <div style={{ height: 'calc(100vh - 160px)' }}>{flowEl}</div>
+      </Modal>
     </div>
   )
 }

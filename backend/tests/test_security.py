@@ -29,11 +29,11 @@ NEW_PASSWORD = "newPass456"
 VIEWER_EMAIL = "viewer@sec.local"
 VIEWER_PASSWORD = "viewer123"
 
-os.environ["H3F_SECRET"] = "h3f-security-test-secret"
-os.environ["H3F_ADMIN_EMAIL"] = ADMIN_EMAIL
-os.environ["H3F_ADMIN_PASSWORD"] = ""            # 不自动建管理员 → 走 bootstrap
-os.environ["H3F_MAX_UPLOAD_MB"] = "1"            # 上传上限 1MB,便于构造超限
-for _k in ("H3F_LLM_BASE_URL", "H3F_LLM_API_KEY", "H3F_LLM_MODEL"):
+os.environ["H3AC_SECRET"] = "h3ac-security-test-secret"
+os.environ["H3AC_ADMIN_EMAIL"] = ADMIN_EMAIL
+os.environ["H3AC_ADMIN_PASSWORD"] = ""            # 不自动建管理员 → 走 bootstrap
+os.environ["H3AC_MAX_UPLOAD_MB"] = "1"            # 上传上限 1MB,便于构造超限
+for _k in ("H3AC_LLM_BASE_URL", "H3AC_LLM_API_KEY", "H3AC_LLM_MODEL"):
     os.environ[_k] = ""
 
 from fastapi.testclient import TestClient            # noqa: E402
@@ -41,7 +41,7 @@ from fastapi.testclient import TestClient            # noqa: E402
 from app.core import config as C                     # noqa: E402
 from app.db import database as db                    # noqa: E402
 
-TMP = tempfile.mkdtemp(prefix="h3f_sec_test_")
+TMP = tempfile.mkdtemp(prefix="h3ac_sec_test_")
 C.DATA_DIR = os.path.join(TMP, "data")
 C.DB_PATH = os.path.join(C.DATA_DIR, "test.db")
 C.SECRET_FILE = os.path.join(C.DATA_DIR, "secret.key")
@@ -175,7 +175,7 @@ def run():
                     data={"kind": "other"})
     ok(r.status_code == 400, "非法扩展名上传返回 400")
 
-    # 10) 上传超限 413(env H3F_MAX_UPLOAD_MB=1,传 2MB)
+    # 10) 上传超限 413(env H3AC_MAX_UPLOAD_MB=1,传 2MB)
     r = client.post("/api/projects/%d/documents" % pid,
                     files={"file": ("big.txt", b"a" * (2 * 1024 * 1024), "text/plain")},
                     data={"kind": "other"})

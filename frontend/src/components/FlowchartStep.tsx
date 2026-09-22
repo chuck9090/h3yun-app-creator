@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
-import { Alert, App as AntApp, Button, Card, Empty, Input, Space, Spin, Tag } from 'antd'
+import { Alert, App as AntApp, Button, Card, Empty, Input, Modal, Space, Spin, Tag } from 'antd'
 import {
   ArrowLeftOutlined,
   EditOutlined,
+  FullscreenExitOutlined,
+  FullscreenOutlined,
   ReloadOutlined,
   RobotOutlined,
   SaveOutlined,
@@ -10,8 +12,26 @@ import {
 import mermaid from 'mermaid'
 import DOMPurify from 'dompurify'
 import { errMsg, get, post, put } from '../api/client'
+import JobProgressPanel from './JobProgressPanel'
+import { useJob } from '../hooks/useJob'
+import { useTheme } from '../theme/ThemeContext'
 
-mermaid.initialize({ startOnLoad: false, theme: 'default', securityLevel: 'strict', fontFamily: 'inherit' })
+/**
+ * mermaid 配置。
+ *  - htmlLabels: false —— 节点文字渲染为 SVG <text>,而不是 <foreignObject> 里的 HTML。
+ *    原因:DOMPurify 的 forbidContents 默认会删掉 foreignObject 的子内容,
+ *    会导致"只有框框没有文字"。
+ *  - useMaxWidth: false —— 保留图的自然尺寸,避免超宽流程图被 max-width 压得看不清;
+ *    容器改为横向滚动。
+ */
+const MERMAID_CFG = {
+  startOnLoad: false,
+  securityLevel: 'strict' as const,
+  fontFamily: 'inherit',
+  flowchart: { htmlLabels: false, useMaxWidth: false },
+}
+
+mermaid.initialize(MERMAID_CFG)
 
 /** 对 mermaid 产出的 SVG 再做一次白名单净化(XSS 双保险)。 */
 function sanitizeSvg(svg: string): string {
@@ -26,22 +46,26 @@ export default function FlowchartStep({
   projectId,
   canWrite,
   onGoto,
+  onGenerated,
   gate,
 }: {
   projectId: number
   canWrite: boolean
   onGoto?: (key: string) => void
+  /** 生成完成后回调:用于让工作台上层重新拉取项目状态,解锁后续阶段 */
+  onGenerated?: () => void
   gate?: string
 }) {
   const { message } = AntApp.useApp()
+  const { dark } = useTheme()
   const [source, setSource] = useState('')
   const [provider, setProvider] = useState('')
   const [loading, setLoading] = useState(true)
-  const [generating, setGenerating] = useState(false)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
   const [svg, setSvg] = useState('')
   const [renderError, setRenderError] = useState('')
+  const [fullscreen, setFullscreen] = useState(false)
 
   async function load() {
     setLoading(true)
@@ -58,19 +82,32 @@ export default function FlowchartStep({
     }
   }
 
+  const { job, running, start } = useJob(
+    projectId,
+    'flowchart',
+    async () => {
+      await load()
+      message.success('业务流程图已生成')
+      onGenerated?.()
+    },
+    (j) => message.error(`生成失败:${j.error || '未知错误'}`),
+  )
+
   useEffect(() => {
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId])
 
   useEffect(() => {
+    // 重新初始化 mermaid,使图表配色跟随当前主题
+    mermaid.initialize({ ...MERMAID_CFG, theme: dark ? 'dark' : 'default' })
     if (!source.trim()) {
       setSvg('')
       setRenderError('')
       return
     }
     let alive = true
-    const id = `h3f-mermaid-${Date.now()}-${renderSeq++}`
+    const id = `h3ac-mermaid-${Date.now()}-${renderSeq++}`
     mermaid
       .render(id, source)
       .then((res) => {
@@ -86,22 +123,13 @@ export default function FlowchartStep({
     return () => {
       alive = false
     }
-  }, [source])
+  }, [source, dark])
 
   async function generate() {
-    setGenerating(true)
     try {
-      const r = await post<{ mermaid?: string; provider?: string }>(
-        `/api/projects/${projectId}/flowchart/generate`,
-        {},
-      )
-      setSource(r?.mermaid || '')
-      setProvider(r?.provider || '')
-      message.success('业务流程图已生成')
+      await start(() => post(`/api/projects/${projectId}/flowchart/generate`, {}))
     } catch (e) {
       message.error(errMsg(e))
-    } finally {
-      setGenerating(false)
     }
   }
 
@@ -115,7 +143,8 @@ export default function FlowchartStep({
       await put(`/api/projects/${projectId}/flowchart`, { mermaid: draft })
       setSource(draft)
       setEditing(false)
-      message.success('流程图已保存')
+      message.success('业务流程图已保存')
+      onGenerated?.()
     } catch (e) {
       message.error(errMsg(e))
     }
@@ -134,8 +163,8 @@ export default function FlowchartStep({
           <Button
             type={source ? 'default' : 'primary'}
             icon={<RobotOutlined />}
-            loading={generating}
-            disabled={!canWrite || !!gate}
+            loading={running}
+            disabled={!canWrite || !!gate || running}
             onClick={generate}
           >
             {source ? '重新生成' : '生成业务流程图'}
@@ -146,14 +175,22 @@ export default function FlowchartStep({
           <Button icon={<ReloadOutlined />} onClick={load}>
             刷新
           </Button>
+          {source ? (
+            <Button
+              icon={fullscreen ? <FullscreenExitOutlined /> : <FullscreenOutlined />}
+              onClick={() => setFullscreen((v) => !v)}
+            >
+              {fullscreen ? '退出全屏' : '全屏'}
+            </Button>
+          ) : null}
           {source && !editing ? (
-            <Button icon={<EditOutlined />} disabled={!canWrite} onClick={startEdit}>
+            <Button icon={<EditOutlined />} disabled={!canWrite || running} onClick={startEdit}>
               编辑源码
             </Button>
           ) : null}
           {editing ? (
             <>
-              <Button type="primary" icon={<SaveOutlined />} onClick={saveEdit}>
+              <Button type="primary" icon={<SaveOutlined />} disabled={running} onClick={saveEdit}>
                 保存
               </Button>
               <Button onClick={() => setEditing(false)}>取消</Button>
@@ -162,6 +199,7 @@ export default function FlowchartStep({
         </Space>
       }
     >
+      <JobProgressPanel job={job} />
       {gate ? (
         <Alert
           type="warning"
@@ -172,7 +210,7 @@ export default function FlowchartStep({
         />
       ) : null}
       {loading ? (
-        <div style={{ textAlign: 'center', padding: 40 }}>
+        <div style={{ textAlign: 'center', padding: 24 }}>
           <Spin />
         </div>
       ) : source ? (
@@ -197,7 +235,7 @@ export default function FlowchartStep({
             <div className="flowchart-svg" dangerouslySetInnerHTML={{ __html: svg }} />
           )}
           <details style={{ marginTop: 12 }}>
-            <summary style={{ cursor: 'pointer', color: '#8c8c8c' }}>查看 / 复制 Mermaid 源码</summary>
+            <summary style={{ cursor: 'pointer', color: 'var(--text-3)' }}>查看 / 复制 Mermaid 源码</summary>
             <Input.TextArea
               value={source}
               readOnly
@@ -207,21 +245,47 @@ export default function FlowchartStep({
           </details>
         </>
       ) : (
-        <Empty description="尚未生成流程图">
+        <Empty description="尚未生成业务流程图">
           <Space>
             <Button
               type="primary"
               icon={<RobotOutlined />}
-              loading={generating}
-              disabled={!canWrite || !!gate}
+              loading={running}
+              disabled={!canWrite || !!gate || running}
               onClick={generate}
             >
               生成业务流程图
             </Button>
-            {canWrite ? null : <span style={{ color: '#8c8c8c' }}>无写入权限</span>}
+            {canWrite ? null : <span style={{ color: 'var(--text-3)' }}>无写入权限</span>}
           </Space>
         </Empty>
       )}
+
+      <Modal
+        open={fullscreen}
+        onCancel={() => setFullscreen(false)}
+        footer={null}
+        width="90%"
+        title="业务流程图"
+        styles={{ body: { padding: 16 } }}
+      >
+        <Space style={{ marginBottom: 12 }}>
+          <Button icon={<FullscreenExitOutlined />} onClick={() => setFullscreen(false)}>
+            退出全屏
+          </Button>
+        </Space>
+        <div style={{ height: 'calc(100vh - 200px)', overflow: 'auto' }}>
+          {editing ? (
+            <Input.TextArea
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              style={{ height: '100%', fontFamily: 'Consolas, Monaco, monospace' }}
+            />
+          ) : (
+            <div className="flowchart-svg" dangerouslySetInnerHTML={{ __html: svg }} />
+          )}
+        </div>
+      </Modal>
     </Card>
   )
 }

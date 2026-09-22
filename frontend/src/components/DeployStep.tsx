@@ -24,6 +24,8 @@ import {
   post,
   Project,
 } from '../api/client'
+import JobProgressPanel from './JobProgressPanel'
+import { useJob } from '../hooks/useJob'
 
 function normalizeSheets(res: any): DeploySheetResult[] {
   if (!res) return []
@@ -64,14 +66,12 @@ export default function DeployStep({
   const { message, modal } = AntApp.useApp()
   const [status, setStatus] = useState<CredentialsStatus | null>(null)
   const [statusLoading, setStatusLoading] = useState(true)
-  const [deploying, setDeploying] = useState(false)
   const [force, setForce] = useState(false)
   const [result, setResult] = useState<DeployResult | null>(null)
   const [sheetRows, setSheetRows] = useState<DeploySheetResult[]>([])
   const [autoRows, setAutoRows] = useState<DeployAutomationResult[]>([])
   const [groupRows, setGroupRows] = useState<DeployGroupResult[]>([])
   const [deployError, setDeployError] = useState('')
-  const [verifying, setVerifying] = useState(false)
   const [verifyResult, setVerifyResult] = useState<any>(null)
 
   const loadStatus = useCallback(async () => {
@@ -91,29 +91,45 @@ export default function DeployStep({
     loadStatus()
   }, [loadStatus])
 
-  async function runDeploy(useForce: boolean) {
-    setDeploying(true)
-    setDeployError('')
-    try {
-      // 契约为请求体 force;同时带 query 以兼容尚未迁移的旧后端。
-      const url = `/api/projects/${projectId}/deploy${useForce ? '?force=true' : ''}`
-      const res = await post<DeployResult>(url, useForce ? { force: true } : {})
-      setResult(res || null)
+  const deployJob = useJob(
+    projectId,
+    'deploy',
+    async (j) => {
+      const res = (j.result || null) as DeployResult | null
+      setResult(res)
       setSheetRows(normalizeSheets(res))
       setAutoRows(normalizeAutomations(res))
       setGroupRows(normalizeGroups(res))
       if (res?.error) setDeployError(String(res.error))
-      const failedSheets = normalizeSheets(res).filter((r) => r.err)
-      const failedAutos = normalizeAutomations(res).filter((r) => r.err)
-      const failedGroups = normalizeGroups(res).filter((r) => r.created === false)
-      const failed = failedSheets.length + failedAutos.length + failedGroups.length
+      const failed =
+        normalizeSheets(res).filter((r) => r.err).length +
+        normalizeAutomations(res).filter((r) => r.err).length +
+        normalizeGroups(res).filter((r) => r.created === false).length
       if (failed) message.warning(`部署完成,但有 ${failed} 项失败`)
       else message.success('氚云应用生成完成')
       onDeployed?.()
+    },
+    (j) => message.error(`生成失败:${j.error || '未知错误'}`),
+  )
+
+  const verifyJob = useJob(
+    projectId,
+    'verify',
+    async (j) => {
+      setVerifyResult(j.result ?? null)
+      message.success('回读核对完成')
+    },
+    (j) => message.error(`回读核对失败:${j.error || '未知错误'}`),
+  )
+
+  async function runDeploy(useForce: boolean) {
+    setDeployError('')
+    try {
+      // 契约为请求体 force;同时带 query 以兼容尚未迁移的旧后端。
+      const url = `/api/projects/${projectId}/deploy${useForce ? '?force=true' : ''}`
+      await deployJob.start(() => post(url, useForce ? { force: true } : {}))
     } catch (e) {
       message.error(errMsg(e))
-    } finally {
-      setDeploying(false)
     }
   }
 
@@ -134,15 +150,10 @@ export default function DeployStep({
   }
 
   async function verify() {
-    setVerifying(true)
     try {
-      const res = await post<any>(`/api/projects/${projectId}/verify`, {})
-      setVerifyResult(res)
-      message.success('回读核对完成')
+      await verifyJob.start(() => post(`/api/projects/${projectId}/verify`, {}))
     } catch (e) {
       message.error(errMsg(e))
-    } finally {
-      setVerifying(false)
     }
   }
 
@@ -199,7 +210,7 @@ export default function DeployStep({
     <div>
       <Card
         title="凭据状态"
-        style={{ marginBottom: 16 }}
+        style={{ marginBottom: 12 }}
         extra={
           <Button icon={<ReloadOutlined />} loading={statusLoading} onClick={loadStatus}>
             刷新
@@ -262,16 +273,16 @@ export default function DeployStep({
             <Button
               type="primary"
               icon={<CloudUploadOutlined />}
-              loading={deploying}
-              disabled={!canWrite || !!gate}
+              loading={deployJob.running}
+              disabled={!canWrite || !!gate || deployJob.running}
               onClick={deploy}
             >
               生成氚云应用
             </Button>
             <Button
               icon={<SafetyCertificateOutlined />}
-              loading={verifying}
-              disabled={!canWrite}
+              loading={verifyJob.running}
+              disabled={!canWrite || verifyJob.running}
               onClick={verify}
             >
               回读核对
@@ -279,6 +290,7 @@ export default function DeployStep({
           </Space>
         }
       >
+        <JobProgressPanel job={deployJob.job} />
         {gate ? (
           <Alert
             type="warning"
@@ -331,7 +343,7 @@ export default function DeployStep({
 
         {groupRows.length ? (
           <>
-            <Typography.Text strong style={{ display: 'block', marginTop: 16 }}>
+            <Typography.Text strong style={{ display: 'block', marginTop: 12 }}>
               分组(应用菜单)
             </Typography.Text>
             <Table<DeployGroupResult>
@@ -357,7 +369,7 @@ export default function DeployStep({
 
         {autoRows.length ? (
           <>
-            <Typography.Text strong style={{ display: 'block', marginTop: 16 }}>
+            <Typography.Text strong style={{ display: 'block', marginTop: 12 }}>
               自动化
             </Typography.Text>
             <Table<DeployAutomationResult>
@@ -375,6 +387,8 @@ export default function DeployStep({
           <Empty description="尚未生成应用" />
         ) : null}
       </Card>
+
+      <JobProgressPanel job={verifyJob.job} />
 
       {verifyResult ? (
         <Card title="回读核对结果" style={{ marginTop: 16 }}>

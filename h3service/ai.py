@@ -8,7 +8,7 @@
 - `OpenAICompatProvider`:调用 OpenAI 兼容接口(base_url 可换成任意国产/私有模型),
   提示词内嵌 DSL 约束与设计 SOP,要求返回严格 JSON。
 
-选择:环境变量 H3F_LLM_BASE_URL / H3F_LLM_API_KEY / H3F_LLM_MODEL 齐全 → LLM,否则启发式。
+选择:环境变量 H3AC_LLM_BASE_URL / H3AC_LLM_API_KEY / H3AC_LLM_MODEL 齐全 → LLM,否则启发式。
 """
 import json
 import os
@@ -244,9 +244,9 @@ class OpenAICompatProvider(AIProvider):
 
 
 def get_provider():
-    base = os.environ.get("H3F_LLM_BASE_URL", "").strip()
-    key = os.environ.get("H3F_LLM_API_KEY", "").strip()
-    model = os.environ.get("H3F_LLM_MODEL", "").strip()
+    base = os.environ.get("H3AC_LLM_BASE_URL", "").strip()
+    key = os.environ.get("H3AC_LLM_API_KEY", "").strip()
+    model = os.environ.get("H3AC_LLM_MODEL", "").strip()
     if base and key and model:
         return OpenAICompatProvider(base, key, model)
     return HeuristicProvider()

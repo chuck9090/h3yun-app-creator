@@ -15,6 +15,7 @@ from .. import storage
 from ..core import deps
 from ..db import database as db
 from ..schemas import pipeline as S
+from ..services import jobs as jobs_service
 
 router = APIRouter(prefix="/api", tags=["deploy"])
 
@@ -49,36 +50,48 @@ def deploy(id: int, body: S.DeployIn = None, user=Depends(deps.require_user)):
         raise HTTPException(
             400, "氚云凭据未配置或已过期(appCode / h3_token 缺失或无效),无法生成应用")
 
-    try:
-        cfg = EB.build_cfg(p)
-        res = EB.deploy(p["slug"], cfg, force)
-    except Exception as e:
-        db.update_project(p["id"], status="failed")
-        db.add_event(p["id"], "deploy", "生成应用失败:%s" % e)
-        raise HTTPException(400, "生成应用失败:%s" % e)
+    slug, pid = p["slug"], p["id"]
 
-    ok = bool(res.get("all_ok"))
-    db.update_project(p["id"], status=("deployed" if ok else "failed"))
-    db.add_event(p["id"], "deploy",
-                 "生成氚云应用:%s(表单 %d 张 / 分组 %d 个 / 自动化 %d 条%s)"
-                 % ("成功" if ok else "失败", len(res.get("sheets") or []),
-                    len(res.get("groups") or []),
-                    len(res.get("automations") or []),
-                    ", force=true" if force else ""))
-    return _ok(res)
+    def runner(progress):
+        progress("准备部署载荷", pct=5)
+        cfg = EB.build_cfg(p)
+        res = EB.deploy(slug, cfg, force, progress=progress)
+        ok = bool(res.get("all_ok"))
+        if ok:
+            db.update_project(pid, status="deployed")
+        db.add_event(pid, "deploy",
+                     "生成氚云应用:%s(表单 %d 张 / 分组 %d 个 / 自动化 %d 条%s)"
+                     % ("成功" if ok else "失败", len(res.get("sheets") or []),
+                        len(res.get("groups") or []),
+                        len(res.get("automations") or []),
+                        ", force=true" if force else ""))
+        res["_detail"] = ("表单 %d / 分组 %d / 自动化 %d"
+                          % (len(res.get("sheets") or []), len(res.get("groups") or []),
+                             len(res.get("automations") or [])))
+        return res
+
+    job, created = jobs_service.submit(
+        pid, user["id"], "deploy", runner,
+        title="生成氚云应用(force)" if force else "生成氚云应用",
+        variant=("force" if force else "normal"))
+    return _ok({"job": job, "created": created})
 
 
 @router.post("/projects/{id}/verify")
 def verify(id: int, user=Depends(deps.require_user)):
-    p = deps.get_project(id, user)
+    p = deps.get_project(id, user, write=True)
     if not EB.credentials_status(p).get("configured"):
         raise HTTPException(400, "氚云凭据未配置或已过期,无法回读核对")
-    try:
-        res = EB.verify(p["slug"], EB.build_cfg(p))
-    except Exception as e:
-        raise HTTPException(400, "回读核对失败:%s" % e)
-    db.add_event(p["id"], "verify", "回读核对:%s" % ("通过" if res.get("all_ok") else "存在差异"))
-    return _ok(res)
+    slug, pid = p["slug"], p["id"]
+
+    def runner(progress):
+        res = EB.verify(slug, EB.build_cfg(p), progress=progress)
+        db.add_event(pid, "verify", "回读核对:%s" % ("通过" if res.get("all_ok") else "存在差异"))
+        res["_detail"] = "通过" if res.get("all_ok") else "存在差异"
+        return res
+
+    job, created = jobs_service.submit(pid, user["id"], "verify", runner)
+    return _ok({"job": job, "created": created})
 
 
 @router.get("/projects/{id}/credentials/status")

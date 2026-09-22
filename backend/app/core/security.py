@@ -56,7 +56,7 @@ def _warn_if_permissions_loose(path: str) -> None:
             return
         for token in ("Everyone", "BUILTIN\\Users", "Authenticated Users"):
             if token in out:
-                print("[warn] 密钥文件权限过宽,建议使用 H3F_SECRET 环境变量或收紧 ACL:%s"
+                print("[warn] 密钥文件权限过宽,建议使用 H3AC_SECRET 环境变量或收紧 ACL:%s"
                       % path)
                 break
         return
@@ -71,9 +71,9 @@ def _warn_if_permissions_loose(path: str) -> None:
 def _secret_bytes() -> bytes:
     """Cookie/JWT 签名与凭据加密的服务端密钥。
 
-    生产环境应通过 `H3F_SECRET` 环境变量注入(优先于落盘文件),避免密钥文件泄露。
+    生产环境应通过 `H3AC_SECRET` 环境变量注入(优先于落盘文件),避免密钥文件泄露。
     """
-    env = os.environ.get("H3F_SECRET", "").strip()
+    env = os.environ.get("H3AC_SECRET", "").strip()
     if env:
         return env.encode("utf-8")
     os.makedirs(C.DATA_DIR, exist_ok=True)
@@ -90,7 +90,7 @@ def _secret_bytes() -> bytes:
 
 
 def _derive(purpose: bytes, length: int = 32) -> bytes:
-    return hashlib.pbkdf2_hmac("sha256", _secret_bytes(), b"h3f:" + purpose,
+    return hashlib.pbkdf2_hmac("sha256", _secret_bytes(), b"h3ac:" + purpose,
                                50_000, dklen=length)
 
 
@@ -110,6 +110,21 @@ def verify_password(password: str, stored: str) -> bool:
         return hmac.compare_digest(got, base64.b64decode(dk_b64))
     except Exception:
         return False
+
+
+# ---------------------------------------------------------------- 一次性激活码
+def new_activation_code() -> str:
+    """生成随机一次性激活码(用于新用户首次登录设置密码)。"""
+    return secrets.token_urlsafe(12)
+
+
+def hash_token(token: str) -> str:
+    """激活码只存哈希,避免数据库泄露后可直接使用。"""
+    return hashlib.sha256((token or "").encode("utf-8")).hexdigest()
+
+
+def token_matches(token: str, stored_hash: str) -> bool:
+    return bool(stored_hash) and hmac.compare_digest(hash_token(token), stored_hash)
 
 
 # ---------------------------------------------------------------- JWT

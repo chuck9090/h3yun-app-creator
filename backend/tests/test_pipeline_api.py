@@ -26,9 +26,9 @@ sys.path.insert(0, BACKEND)
 STAMP = "%d" % int(time.time())
 ADMIN_EMAIL = "pipetest_%s@local" % STAMP
 ADMIN_PASSWORD = "PipeTest123!"
-os.environ["H3F_ADMIN_EMAIL"] = ADMIN_EMAIL
-os.environ["H3F_ADMIN_PASSWORD"] = ADMIN_PASSWORD
-for _k in ("H3F_LLM_BASE_URL", "H3F_LLM_API_KEY", "H3F_LLM_MODEL"):
+os.environ["H3AC_ADMIN_EMAIL"] = ADMIN_EMAIL
+os.environ["H3AC_ADMIN_PASSWORD"] = ADMIN_PASSWORD
+for _k in ("H3AC_LLM_BASE_URL", "H3AC_LLM_API_KEY", "H3AC_LLM_MODEL"):
     os.environ[_k] = ""
 
 from fastapi.testclient import TestClient          # noqa: E402
@@ -68,6 +68,18 @@ def _data(resp):
         return resp.json().get("data")
     except Exception:
         return None
+
+
+def _run_job(c, resp):
+    """生成/核对接口现为异步任务:POST 返回 {job,created},轮询至终态并返回 job(含 result)。"""
+    data = _data(resp)
+    jid = (data or {}).get("job", {}).get("id")
+    for _ in range(600):
+        j = _data(c.get("/api/jobs/%s" % jid))
+        if j and j.get("status") != "running":
+            return j
+        time.sleep(0.05)
+    return {"status": "timeout", "result": {}, "error": "job timeout"}
 
 
 def _ensure_admin():
@@ -186,9 +198,11 @@ def main():
             check("GET plan(初始)", isinstance(d, dict) and d.get("markdown") == "")
 
             r = c.post("/api/projects/%s/plan/generate" % pid, json={})
-            d = _data(r)
+            job = _run_job(c, r)
+            d = job.get("result") or {}
             md = (d or {}).get("markdown") or ""
-            check("POST plan/generate", r.status_code == 200 and len(md) > 20,
+            check("POST plan/generate", r.status_code == 200 and job.get("status") == "done"
+                  and len(md) > 20,
                   "provider=%s chars=%d" % ((d or {}).get("provider"), len(md)))
             check("plan provider=heuristic", (d or {}).get("provider") == "heuristic")
 
@@ -200,10 +214,11 @@ def main():
 
             # ---- 流程图 --------------------------------------------------
             r = c.post("/api/projects/%s/flowchart/generate" % pid, json={})
-            d = _data(r)
+            job = _run_job(c, r)
+            d = job.get("result") or {}
             mmd = (d or {}).get("mermaid") or ""
             head = mmd.strip().splitlines()[0].strip().lower() if mmd.strip() else ""
-            check("POST flowchart/generate", r.status_code == 200
+            check("POST flowchart/generate", r.status_code == 200 and job.get("status") == "done"
                   and (head.startswith("flowchart") or head.startswith("graph")),
                   "provider=%s head=%s" % ((d or {}).get("provider"), head))
             r = c.put("/api/projects/%s/flowchart" % pid,
@@ -214,9 +229,11 @@ def main():
 
             # ---- ER 结构 -------------------------------------------------
             r = c.post("/api/projects/%s/design/generate" % pid, json={})
-            d = _data(r)
+            job = _run_job(c, r)
+            d = job.get("result") or {}
             sheets = (d or {}).get("sheets") or []
-            check("POST design/generate", r.status_code == 200 and len(sheets) > 0,
+            check("POST design/generate", r.status_code == 200 and job.get("status") == "done"
+                  and len(sheets) > 0,
                   "provider=%s sheets=%d error=%s"
                   % ((d or {}).get("provider"), len(sheets), (d or {}).get("error")))
             check("design 引擎校验无 error", (d or {}).get("error") == "",

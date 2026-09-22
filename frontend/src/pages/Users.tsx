@@ -12,8 +12,9 @@ import {
   Switch,
   Table,
   Tag,
+  Typography,
 } from 'antd'
-import { DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons'
+import { DeleteOutlined, EditOutlined, KeyOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
 import dayjs from 'dayjs'
 import { del, errMsg, get, patch, post, User } from '../api/client'
@@ -37,6 +38,7 @@ export default function Users({ me }: { me: User }) {
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<User | null>(null)
   const [saving, setSaving] = useState(false)
+  const [activation, setActivation] = useState<{ email: string; code: string } | null>(null)
   const [form] = Form.useForm()
 
   const load = useCallback(async () => {
@@ -59,7 +61,6 @@ export default function Users({ me }: { me: User }) {
   function openCreate() {
     setEditing(null)
     form.resetFields()
-    form.setFieldsValue({ role: 'designer', active: true })
     setOpen(true)
   }
 
@@ -93,13 +94,9 @@ export default function Users({ me }: { me: User }) {
         await patch(`/api/users/${editing.id}`, payload)
         message.success('用户已更新')
       } else {
-        await post('/api/users', {
-          email: v.email,
-          password: v.password,
-          displayName: v.displayName || v.email,
-          role: v.role,
-        })
+        const u = await post<User>('/api/users', { email: v.email })
         message.success('用户已创建')
+        if (u?.activationCode) setActivation({ email: u.email, code: u.activationCode })
       }
       setOpen(false)
       load()
@@ -107,6 +104,16 @@ export default function Users({ me }: { me: User }) {
       message.error(errMsg(e))
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function regenerate(u: User) {
+    try {
+      const r = await post<User>(`/api/users/${u.id}/activation`, {})
+      setActivation({ email: r.email, code: r.activationCode || '' })
+      load()
+    } catch (e) {
+      message.error(errMsg(e))
     }
   }
 
@@ -146,6 +153,14 @@ export default function Users({ me }: { me: User }) {
       render: (v: boolean) => (v ? <Tag color="green">启用</Tag> : <Tag color="default">停用</Tag>),
     },
     {
+      title: '密码',
+      dataIndex: 'hasPassword',
+      key: 'hasPassword',
+      width: 100,
+      render: (v: boolean) =>
+        v ? <Tag color="green">已设置</Tag> : <Tag color="orange">待设置</Tag>,
+    },
+    {
       title: '创建时间',
       dataIndex: 'createdAt',
       key: 'createdAt',
@@ -161,6 +176,11 @@ export default function Users({ me }: { me: User }) {
           <Button size="small" type="link" icon={<EditOutlined />} onClick={() => openEdit(u)}>
             编辑
           </Button>
+          {!u.hasPassword ? (
+            <Button size="small" type="link" icon={<KeyOutlined />} onClick={() => regenerate(u)}>
+              激活码
+            </Button>
+          ) : null}
           {u.id !== me.id ? (
             <Popconfirm
               title="确认删除该用户?"
@@ -213,45 +233,54 @@ export default function Users({ me }: { me: User }) {
       >
         <Form form={form} layout="vertical" preserve={false}>
           {!editing ? (
+            <Form.Item
+              name="email"
+              label="邮箱"
+              extra="创建后该用户密码为空,首次登录时自行设置密码"
+              rules={[
+                { required: true, message: '请输入邮箱' },
+                { type: 'email', message: '邮箱格式不正确' },
+              ]}
+            >
+              <Input placeholder="user@example.com" />
+            </Form.Item>
+          ) : (
             <>
-              <Form.Item
-                name="email"
-                label="邮箱"
-                rules={[
-                  { required: true, message: '请输入邮箱' },
-                  { type: 'email', message: '邮箱格式不正确' },
-                ]}
-              >
-                <Input placeholder="user@example.com" />
+              <Form.Item name="displayName" label="显示名称">
+                <Input placeholder="用户名称" />
               </Form.Item>
-              <Form.Item
-                name="password"
-                label="密码"
-                rules={[
-                  { required: true, message: '请输入密码' },
-                  { min: 6, message: '密码至少 6 位' },
-                ]}
-              >
-                <Input.Password placeholder="至少 6 位" />
+              <Form.Item name="role" label="角色" rules={[{ required: true, message: '请选择角色' }]}>
+                <Select options={ROLE_OPTIONS} />
+              </Form.Item>
+              <Form.Item name="password" label="重置密码" extra="留空表示不修改">
+                <Input.Password placeholder="留空不修改" />
+              </Form.Item>
+              <Form.Item name="active" label="启用" valuePropName="checked">
+                <Switch />
               </Form.Item>
             </>
-          ) : (
-            <Form.Item name="password" label="重置密码" extra="留空表示不修改">
-              <Input.Password placeholder="留空不修改" />
-            </Form.Item>
           )}
-          <Form.Item name="displayName" label="显示名称">
-            <Input placeholder="用户名称" />
-          </Form.Item>
-          <Form.Item name="role" label="角色" rules={[{ required: true, message: '请选择角色' }]}>
-            <Select options={ROLE_OPTIONS} />
-          </Form.Item>
-          {editing ? (
-            <Form.Item name="active" label="启用" valuePropName="checked">
-              <Switch />
-            </Form.Item>
-          ) : null}
         </Form>
+      </Modal>
+
+      <Modal
+        title="首次登录激活码"
+        open={!!activation}
+        onOk={() => setActivation(null)}
+        onCancel={() => setActivation(null)}
+        okText="我已复制"
+        cancelText="关闭"
+      >
+        <Typography.Paragraph type="secondary">
+          请将此激活码发给用户 <b>{activation?.email}</b>,该用户在登录页凭「邮箱 + 激活码 + 新密码」
+          完成首次密码设置。激活码仅显示这一次,请妥善转达。
+        </Typography.Paragraph>
+        <Typography.Paragraph
+          copyable={{ text: activation?.code || '' }}
+          style={{ fontSize: 18, fontFamily: 'Consolas, Monaco, monospace', wordBreak: 'break-all' }}
+        >
+          {activation?.code}
+        </Typography.Paragraph>
       </Modal>
     </Card>
   )

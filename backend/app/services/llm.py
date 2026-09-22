@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """AI Provider 抽象。
 
-配置优先级:DB settings(key='llm') → 环境变量 H3F_LLM_* → 无(启发式)。
+配置优先级:DB settings(key='llm') → 环境变量 H3AC_LLM_* → 无(启发式)。
 所有产出交由引擎清洗/校验(见 services/plan|flowchart|design)。
 """
 import json
@@ -23,9 +23,9 @@ def get_llm_config() -> dict:
     api_key = sec.decrypt_secret(key_enc) if key_enc else ""
     source = "db"
     if not (base and api_key and model):
-        base = os.environ.get("H3F_LLM_BASE_URL", "").strip()
-        api_key = os.environ.get("H3F_LLM_API_KEY", "").strip()
-        model = os.environ.get("H3F_LLM_MODEL", "").strip()
+        base = os.environ.get("H3AC_LLM_BASE_URL", "").strip()
+        api_key = os.environ.get("H3AC_LLM_API_KEY", "").strip()
+        model = os.environ.get("H3AC_LLM_MODEL", "").strip()
         source = "env"
     return {"baseUrl": base, "apiKey": api_key, "model": model, "source": source}
 
@@ -69,6 +69,33 @@ class LLMProvider(Provider):
             return data["choices"][0]["message"]["content"]
         except Exception:
             raise RuntimeError("LLM 响应结构异常: %s" % json.dumps(data)[:300])
+
+    def complete_vision(self, system: str, user: str, image_data_url: str,
+                        timeout: int = None) -> str:
+        """多模态识别(OpenAI 兼容 image_url)。模型不支持视觉时由调用方兜底。"""
+        import httpx
+        body = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": [
+                    {"type": "text", "text": user},
+                    {"type": "image_url", "image_url": {"url": image_data_url}},
+                ]},
+            ],
+            "temperature": 0.1,
+        }
+        headers = {"Authorization": "Bearer " + self.api_key,
+                   "Content-Type": "application/json"}
+        with httpx.Client(timeout=timeout or self.timeout) as cli:
+            r = cli.post(self.base_url + "/chat/completions", json=body, headers=headers)
+        if r.status_code >= 400:
+            raise RuntimeError("LLM(视觉) HTTP %d: %s" % (r.status_code, r.text[:300]))
+        data = r.json()
+        try:
+            return data["choices"][0]["message"]["content"]
+        except Exception:
+            raise RuntimeError("LLM(视觉)响应结构异常: %s" % json.dumps(data)[:300])
 
 
 def get_provider() -> Provider:

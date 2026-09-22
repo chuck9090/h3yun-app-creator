@@ -2,7 +2,7 @@
 """项目路由。见 docs/ARCHITECTURE.md §5「项目」。
 
 要点:
-  - slug 即目录名,字母开头,仅含字母/数字/下划线,最长 48;
+  - slug 即目录名,由**系统自动生成序列号**(proj_0001…,基于主键),用户无需填写;
   - h3_token 用 security.encrypt_secret 加密存储,接口绝不回显;
   - engineCode 由**用户在建/改项目时填写**(也支持从 token 预填);appCode 可后填。
 """
@@ -67,18 +67,21 @@ def list_projects(user=Depends(deps.get_current_user)):
 
 @router.post("/projects")
 def create_project(body: ProjectCreate, user=Depends(deps.get_current_user)):
-    if not _SLUG_RE.match(body.name or ""):
-        raise HTTPException(400, "项目标识不合法:需字母开头,仅含字母/数字/下划线,最长 48 位")
-    if db.get_project_by_slug(body.name):
-        raise HTTPException(409, "项目标识已存在")
-    # Windows 文件系统大小写不敏感:精确匹配之外再做一次 LOWER(slug) 查重,
-    # 避免 Store / store 指向同一目录导致数据互相覆盖。
-    lowered = body.name.lower()
-    for existing in db.list_projects():
-        if (existing.get("slug") or "").lower() == lowered:
-            raise HTTPException(409, "项目标识已存在(大小写不敏感)")
     token = _valid_token(body.h3Token)
-    p = db.create_project(body.name, body.title, body.appCode or "",
+    name = (body.name or "").strip()
+    # name 留空 → 由系统生成序列号(proj_0001…)作为目录名;提供时仍做校验与查重
+    if name:
+        if not _SLUG_RE.match(name):
+            raise HTTPException(400, "项目标识不合法:需字母开头,仅含字母/数字/下划线,最长 48 位")
+        if db.get_project_by_slug(name):
+            raise HTTPException(409, "项目标识已存在")
+        # Windows 文件系统大小写不敏感:精确匹配之外再做一次 LOWER(slug) 查重,
+        # 避免 Store / store 指向同一目录导致数据互相覆盖。
+        lowered = name.lower()
+        for existing in db.list_projects():
+            if (existing.get("slug") or "").lower() == lowered:
+                raise HTTPException(409, "项目标识已存在(大小写不敏感)")
+    p = db.create_project(name, body.title, body.appCode or "",
                           (body.engineCode or "").strip(),
                           sec.encrypt_secret(token) if token else "",
                           owner_id=user["id"])
@@ -123,6 +126,15 @@ def delete_project(pid: int, user=Depends(deps.get_current_user)):
     return _result(None, "项目已删除")
 
 
+def _require_owner(p, user):
+    """共享管理(增/删成员)仅限项目所有者或管理员。
+
+    项目成员(即使被授权为 designer)不能把项目再共享给他人。
+    """
+    if user["role"] != "admin" and p.get("owner_id") != user["id"]:
+        raise HTTPException(403, "仅项目所有者或管理员可管理共享成员")
+
+
 @router.get("/projects/{pid}/members")
 def list_members(pid: int, user=Depends(deps.get_current_user)):
     deps.get_project(pid, user)
@@ -131,17 +143,21 @@ def list_members(pid: int, user=Depends(deps.get_current_user)):
 
 @router.post("/projects/{pid}/members")
 def add_member(pid: int, body: MemberIn, user=Depends(deps.get_current_user)):
-    deps.project_writable(pid, user)
+    p = deps.get_project(pid, user)
+    _require_owner(p, user)
     if body.role not in _MEMBER_ROLES:
         raise HTTPException(400, "角色只能是 viewer 或 designer")
     if not db.get_user_by_id(body.userId):
         raise HTTPException(404, "用户不存在")
+    if body.userId == p.get("owner_id"):
+        raise HTTPException(400, "项目所有者无需再授权")
     db.set_member(pid, body.userId, body.role)
     return _result([_member_view(m) for m in db.list_members(pid)], "成员已授权")
 
 
 @router.delete("/projects/{pid}/members/{userId}")
 def remove_member(pid: int, userId: int, user=Depends(deps.get_current_user)):
-    deps.project_writable(pid, user)
+    p = deps.get_project(pid, user)
+    _require_owner(p, user)
     db.remove_member(pid, userId)
     return _result(None, "成员已移除")

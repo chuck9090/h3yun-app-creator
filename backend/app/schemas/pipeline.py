@@ -41,3 +41,18 @@ class LLMSettingsIn(BaseModel):
     baseUrl: str = ""
     apiKey: str = ""
     model: str = ""
+
+
+class RefDocsIn(BaseModel):
+    """项目选择参考的全局资料库资料 id 列表。"""
+    ids: List[int] = []
+
+
+class LibraryItemCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=64)
+    description: str = ""
+
+
+class LibraryItemUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None

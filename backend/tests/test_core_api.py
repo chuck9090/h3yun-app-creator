@@ -22,19 +22,19 @@ if BACKEND not in sys.path:
 ADMIN_EMAIL = "admin@test.local"
 ADMIN_PASSWORD = "admin123456"
 
-os.environ["H3F_SECRET"] = "h3f-test-secret-not-for-production"
-os.environ["H3F_ADMIN_EMAIL"] = ADMIN_EMAIL
-os.environ["H3F_ADMIN_PASSWORD"] = ADMIN_PASSWORD
-os.environ["H3F_LLM_BASE_URL"] = ""
-os.environ["H3F_LLM_API_KEY"] = ""
-os.environ["H3F_LLM_MODEL"] = ""
+os.environ["H3AC_SECRET"] = "h3ac-test-secret-not-for-production"
+os.environ["H3AC_ADMIN_EMAIL"] = ADMIN_EMAIL
+os.environ["H3AC_ADMIN_PASSWORD"] = ADMIN_PASSWORD
+os.environ["H3AC_LLM_BASE_URL"] = ""
+os.environ["H3AC_LLM_API_KEY"] = ""
+os.environ["H3AC_LLM_MODEL"] = ""
 
 from fastapi.testclient import TestClient            # noqa: E402
 
 from app.core import config as C                     # noqa: E402
 from app.db import database as db                    # noqa: E402
 
-TMP = tempfile.mkdtemp(prefix="h3f_test_")
+TMP = tempfile.mkdtemp(prefix="h3ac_test_")
 C.DATA_DIR = os.path.join(TMP, "data")
 C.DB_PATH = os.path.join(C.DATA_DIR, "test.db")
 C.SECRET_FILE = os.path.join(C.DATA_DIR, "secret.key")

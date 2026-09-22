@@ -1,4 +1,4 @@
-# h3factory 一键启动(Windows PowerShell 7) —— 前后端分离,双进程
+# h3yun-app-creator 一键启动(Windows PowerShell 7) —— 前后端分离,双进程
 #
 # 用法:
 #   pwsh -File start.ps1                 # 同时启动后端(8000)+ 前端 dev(5173)
@@ -20,7 +20,7 @@ param(
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 
-Write-Host "== h3factory 工作台(前后端分离)==" -ForegroundColor Cyan
+Write-Host "== 氚云应用生成平台(前后端分离)==" -ForegroundColor Cyan
 
 function Ensure-BackendDeps {
     python -X utf8 -c "import fastapi, uvicorn, httpx, openpyxl, docx, pypdf" 2>$null
@@ -57,13 +57,13 @@ if ($Prod) {
 
 $procs = @()
 if ($startBackend) {
-    # 首次初始化:仅当显式设置 H3F_ADMIN_PASSWORD 时才在启动时自动建管理员;
+    # 首次初始化:仅当显式设置 H3AC_ADMIN_PASSWORD 时才在启动时自动建管理员;
     # 否则系统保持 0 用户,由前端登录页「初始化管理员」完成(不再有默认弱口令)。
-    if ($env:H3F_ADMIN_PASSWORD) {
-        if (-not $env:H3F_ADMIN_EMAIL) { $env:H3F_ADMIN_EMAIL = "admin@local" }
-        Write-Host "将创建管理员:$env:H3F_ADMIN_EMAIL(密码取自 H3F_ADMIN_PASSWORD)" -ForegroundColor Yellow
+    if ($env:H3AC_ADMIN_PASSWORD) {
+        if (-not $env:H3AC_ADMIN_EMAIL) { $env:H3AC_ADMIN_EMAIL = "admin@local" }
+        Write-Host "将创建管理员:$env:H3AC_ADMIN_EMAIL(密码取自 H3AC_ADMIN_PASSWORD)" -ForegroundColor Yellow
     } else {
-        Write-Host "未设置 H3F_ADMIN_PASSWORD:首次访问前端将引导你创建管理员。" -ForegroundColor Yellow
+        Write-Host "未设置 H3AC_ADMIN_PASSWORD:首次访问前端将引导你创建管理员。" -ForegroundColor Yellow
     }
     Write-Host "启动后端: http://localhost:$BackendPort" -ForegroundColor Green
     $procs += Start-Process python -PassThru -WorkingDirectory "$root\backend" `

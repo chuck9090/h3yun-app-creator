@@ -13,7 +13,7 @@ import urllib.request
 import urllib.error
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_DATA_DIR = os.environ.get("H3F_DATA_DIR") or os.path.join(_ROOT, "data")
+_DATA_DIR = os.environ.get("H3AC_DATA_DIR") or os.path.join(_ROOT, "data")
 CONFIG_PATH = os.path.join(_DATA_DIR, "config.json")
 # 运行数据目录 data/config.json(仓库内无凭据文件);凭据由调用方注入 H3(cfg)
 

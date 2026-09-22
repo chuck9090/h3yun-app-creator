@@ -300,7 +300,7 @@ export default function AutomationEditor({
           ) : null}
 
           {/* actions 动作 */}
-          <Typography.Text strong style={{ display: 'block', margin: '16px 0 6px' }}>
+          <Typography.Text strong style={{ display: 'block', margin: '12px 0 6px' }}>
             动作 actions
           </Typography.Text>
           {(a.actions || []).map((ac, pi) => {

@@ -76,7 +76,7 @@ export default function Settings() {
       }
     >
       {loading ? (
-        <div style={{ textAlign: 'center', padding: 40 }}>
+        <div style={{ textAlign: 'center', padding: 24 }}>
           <Spin />
         </div>
       ) : (
@@ -84,7 +84,7 @@ export default function Settings() {
           <Alert
             type="info"
             showIcon
-            style={{ marginBottom: 16 }}
+            style={{ marginBottom: 12 }}
             message="配置 OpenAI 兼容接口即可启用大模型;留空则使用启发式生成。"
             description="Base URL 例如 https://api.openai.com/v1 或任意兼容服务地址;API Key 仅加密存储,不会回显。"
           />
@@ -104,7 +104,7 @@ export default function Settings() {
               <Input placeholder="例如 gpt-4o-mini / qwen-plus" />
             </Form.Item>
             <Typography.Text type="secondary">
-              保存后立即生效,下一次生成方案 / 流程图 / ER 设计时使用。
+              保存后立即生效,下一次生成方案 / 业务流程图 / ER 设计时使用。
             </Typography.Text>
           </Form>
         </>

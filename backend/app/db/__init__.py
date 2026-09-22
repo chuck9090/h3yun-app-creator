@@ -12,6 +12,10 @@ from .database import (init_db,  # noqa: F401
                        # documents
                        add_document, get_document, list_documents, update_document,
                        delete_document,
+                       # library items
+                       create_library_item, get_library_item, get_library_item_by_name,
+                       list_library_items, update_library_item, delete_library_item,
+                       list_library_documents,
                        # settings
                        get_setting, put_setting, all_settings,
                        # jobs / events

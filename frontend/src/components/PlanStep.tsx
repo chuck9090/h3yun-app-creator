@@ -5,6 +5,9 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import MDEditor from '@uiw/react-md-editor'
 import { errMsg, get, post, put } from '../api/client'
+import JobProgressPanel from './JobProgressPanel'
+import { useJob } from '../hooks/useJob'
+import { useTheme } from '../theme/ThemeContext'
 
 export default function PlanStep({
   projectId,
@@ -16,10 +19,10 @@ export default function PlanStep({
   onGenerated?: (key: string) => void
 }) {
   const { message } = AntApp.useApp()
+  const { dark } = useTheme()
   const [markdown, setMarkdown] = useState('')
   const [provider, setProvider] = useState('')
   const [loading, setLoading] = useState(true)
-  const [generating, setGenerating] = useState(false)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
 
@@ -36,26 +39,28 @@ export default function PlanStep({
     }
   }
 
+  // 异步任务:切页/刷新后仍能恢复「处理中」并展示进度明细
+  const { job, running, start } = useJob(
+    projectId,
+    'plan',
+    async () => {
+      await load()
+      message.success('系统设计方案已生成')
+      onGenerated?.('plan')
+    },
+    (j) => message.error(`生成失败:${j.error || '未知错误'}`),
+  )
+
   useEffect(() => {
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId])
 
   async function generate() {
-    setGenerating(true)
     try {
-      const r = await post<{ markdown?: string; provider?: string }>(
-        `/api/projects/${projectId}/plan/generate`,
-        {},
-      )
-      setMarkdown(r?.markdown || '')
-      setProvider(r?.provider || '')
-      message.success('系统设计方案已生成')
-      onGenerated?.('plan')
+      await start(() => post(`/api/projects/${projectId}/plan/generate`, {}))
     } catch (e) {
       message.error(errMsg(e))
-    } finally {
-      setGenerating(false)
     }
   }
 
@@ -88,8 +93,8 @@ export default function PlanStep({
           <Button
             icon={<RobotOutlined />}
             type={markdown ? 'default' : 'primary'}
-            loading={generating}
-            disabled={!canWrite}
+            loading={running}
+            disabled={!canWrite || running}
             onClick={generate}
           >
             {markdown ? '重新生成方案' : '生成方案'}
@@ -98,13 +103,13 @@ export default function PlanStep({
             刷新
           </Button>
           {markdown && !editing ? (
-            <Button icon={<EditOutlined />} disabled={!canWrite} onClick={startEdit}>
+            <Button icon={<EditOutlined />} disabled={!canWrite || running} onClick={startEdit}>
               编辑
             </Button>
           ) : null}
           {editing ? (
             <>
-              <Button icon={<SaveOutlined />} type="primary" onClick={saveEdit}>
+              <Button icon={<SaveOutlined />} type="primary" disabled={running} onClick={saveEdit}>
                 保存
               </Button>
               <Button onClick={() => setEditing(false)}>取消</Button>
@@ -113,12 +118,13 @@ export default function PlanStep({
         </Space>
       }
     >
+      <JobProgressPanel job={job} />
       {loading ? (
-        <div style={{ textAlign: 'center', padding: 40 }}>
+        <div style={{ textAlign: 'center', padding: 24 }}>
           <Spin />
         </div>
       ) : editing ? (
-        <div data-color-mode="light">
+        <div data-color-mode={dark ? 'dark' : 'light'}>
           <MDEditor value={draft} onChange={(v) => setDraft(v || '')} height={560} />
         </div>
       ) : markdown ? (
@@ -137,7 +143,13 @@ export default function PlanStep({
         </>
       ) : (
         <Empty description="尚未生成方案,点击右上角「生成方案」">
-          <Button type="primary" icon={<RobotOutlined />} loading={generating} onClick={generate}>
+          <Button
+            type="primary"
+            icon={<RobotOutlined />}
+            loading={running}
+            disabled={!canWrite || running}
+            onClick={generate}
+          >
             生成方案
           </Button>
         </Empty>

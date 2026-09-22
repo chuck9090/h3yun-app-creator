@@ -9,6 +9,7 @@ import json
 import os
 import sqlite3
 import time
+import uuid
 
 from ..core import config as C
 
@@ -24,6 +25,9 @@ CREATE TABLE IF NOT EXISTS users (
   display_name TEXT DEFAULT '',
   role TEXT NOT NULL DEFAULT 'designer',
   active INTEGER NOT NULL DEFAULT 1,
+  avatar TEXT DEFAULT '',
+  activation_token TEXT DEFAULT '',
+  activation_expires INTEGER DEFAULT 0,
   created_at TEXT, updated_at TEXT
 );
 CREATE TABLE IF NOT EXISTS projects (
@@ -35,6 +39,7 @@ CREATE TABLE IF NOT EXISTS projects (
   h3_token TEXT DEFAULT '',
   status TEXT NOT NULL DEFAULT 'draft',
   owner_id INTEGER DEFAULT 0,
+  ref_items TEXT DEFAULT '[]',
   created_at TEXT, updated_at TEXT
 );
 CREATE TABLE IF NOT EXISTS project_members (
@@ -44,9 +49,20 @@ CREATE TABLE IF NOT EXISTS project_members (
   created_at TEXT,
   PRIMARY KEY (project_id, user_id)
 );
+CREATE TABLE IF NOT EXISTS library_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT UNIQUE NOT NULL,
+  description TEXT DEFAULT '',
+  analysis TEXT DEFAULT '',
+  analysis_at TEXT DEFAULT '',
+  analysis_error TEXT DEFAULT '',
+  created_by INTEGER DEFAULT 0,
+  created_at TEXT, updated_at TEXT
+);
 CREATE TABLE IF NOT EXISTS documents (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   project_id INTEGER,
+  library_id INTEGER,
   kind TEXT NOT NULL DEFAULT 'other',
   filename TEXT NOT NULL,
   stored_path TEXT NOT NULL,
@@ -55,6 +71,9 @@ CREATE TABLE IF NOT EXISTS documents (
   parsed_text TEXT DEFAULT '',
   summary TEXT DEFAULT '',
   tags TEXT DEFAULT '',
+  extract_json TEXT DEFAULT '',
+  extract_status TEXT DEFAULT '',
+  extract_at TEXT DEFAULT '',
   status TEXT NOT NULL DEFAULT 'uploaded',
   uploaded_by TEXT DEFAULT '',
   created_at TEXT, updated_at TEXT
@@ -67,7 +86,14 @@ CREATE TABLE IF NOT EXISTS settings (
 CREATE TABLE IF NOT EXISTS jobs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   kind TEXT NOT NULL,
+  title TEXT DEFAULT '',
+  variant TEXT DEFAULT '',
+  project_id INTEGER DEFAULT 0,
+  user_id INTEGER DEFAULT 0,
   status TEXT NOT NULL DEFAULT 'running',
+  progress TEXT DEFAULT '[]',
+  result TEXT DEFAULT '',
+  error TEXT DEFAULT '',
   detail TEXT DEFAULT '',
   created_at TEXT, updated_at TEXT
 );
@@ -87,14 +113,22 @@ def _now():
 
 def connect():
     os.makedirs(C.DATA_DIR, exist_ok=True)
-    c = sqlite3.connect(C.DB_PATH)
+    c = sqlite3.connect(C.DB_PATH, timeout=30)
     c.row_factory = sqlite3.Row
+    try:
+        c.execute("PRAGMA busy_timeout=30000")   # 后台任务与请求并发写时不立刻报 locked
+    except Exception:
+        pass
     return c
 
 
 def init_db():
     c = connect()
     try:
+        try:
+            c.execute("PRAGMA journal_mode=WAL")   # 允许读写并发(任务线程写进度)
+        except Exception:
+            pass
         c.executescript(_SCHEMA)
         c.commit()
     finally:
@@ -148,8 +182,8 @@ def get_user(uid):
 def list_users():
     c = connect()
     try:
-        return _rows(c.execute("SELECT id,email,display_name,role,active,created_at "
-                               "FROM users ORDER BY id").fetchall())
+        return _rows(c.execute("SELECT id,email,display_name,role,active,avatar,password_hash,"
+                               "activation_token,created_at FROM users ORDER BY id").fetchall())
     finally:
         c.close()
 
@@ -186,14 +220,22 @@ def count_users():
 
 # ================================================================ projects
 def create_project(slug, title, app_code="", engine_code="", h3_token="", owner_id=0):
+    """创建项目。`slug` 为空时由系统按主键生成序列号(proj_0001…)作为目录名。"""
     now = _now()
     c = connect()
     try:
+        auto = not (slug or "").strip()
+        if auto:
+            slug = "tmp_" + uuid.uuid4().hex      # 占位,保证 UNIQUE 成立
         cur = c.execute("INSERT INTO projects(slug,title,app_code,engine_code,h3_token,"
                         "status,owner_id,created_at,updated_at) VALUES(?,?,?,?,?,'draft',?,?,?)",
                         (slug, title, app_code, engine_code, h3_token, owner_id, now, now))
+        pid = cur.lastrowid
+        if auto:
+            slug = "proj_%04d" % pid
+            c.execute("UPDATE projects SET slug=? WHERE id=?", (slug, pid))
         c.commit()
-        return get_project(cur.lastrowid)
+        return get_project(pid)
     finally:
         c.close()
 
@@ -299,15 +341,15 @@ def remove_member(project_id, user_id):
 
 # ================================================================ documents
 def add_document(project_id, kind, filename, stored_path, ext, size,
-                 parsed_text="", uploaded_by=""):
+                 parsed_text="", uploaded_by="", library_id=None):
     now = _now()
     c = connect()
     try:
         cur = c.execute(
-            "INSERT INTO documents(project_id,kind,filename,stored_path,ext,size,"
+            "INSERT INTO documents(project_id,library_id,kind,filename,stored_path,ext,size,"
             "parsed_text,status,uploaded_by,created_at,updated_at) "
-            "VALUES(?,?,?,?,?,?,?,'uploaded',?,?,?)",
-            (project_id, kind, filename, stored_path, ext, size, parsed_text,
+            "VALUES(?,?,?,?,?,?,?,?,'uploaded',?,?,?)",
+            (project_id, library_id, kind, filename, stored_path, ext, size, parsed_text,
              uploaded_by, now, now))
         c.commit()
         return get_document(cur.lastrowid)
@@ -368,6 +410,75 @@ def delete_document(doc_id):
     return doc
 
 
+# ================================================================ 全局资料库
+def create_library_item(name, description="", created_by=0):
+    now = _now()
+    c = connect()
+    try:
+        cur = c.execute("INSERT INTO library_items(name,description,created_by,created_at,updated_at) "
+                        "VALUES(?,?,?,?,?)", (name.strip(), description or "", created_by, now, now))
+        c.commit()
+        return get_library_item(cur.lastrowid)
+    finally:
+        c.close()
+
+
+def get_library_item(item_id):
+    c = connect()
+    try:
+        return _row(c.execute("SELECT * FROM library_items WHERE id=?", (item_id,)).fetchone())
+    finally:
+        c.close()
+
+
+def get_library_item_by_name(name):
+    c = connect()
+    try:
+        return _row(c.execute("SELECT * FROM library_items WHERE name=?", ((name or "").strip(),)).fetchone())
+    finally:
+        c.close()
+
+
+def list_library_items():
+    c = connect()
+    try:
+        return _rows(c.execute("SELECT * FROM library_items ORDER BY id DESC").fetchall())
+    finally:
+        c.close()
+
+
+def update_library_item(item_id, **fields):
+    fields["updated_at"] = _now()
+    cols = ", ".join("%s=?" % k for k in fields)
+    c = connect()
+    try:
+        c.execute("UPDATE library_items SET %s WHERE id=?" % cols, list(fields.values()) + [item_id])
+        c.commit()
+        return get_library_item(item_id)
+    finally:
+        c.close()
+
+
+def delete_library_item(item_id):
+    c = connect()
+    try:
+        c.execute("DELETE FROM library_items WHERE id=?", (item_id,))
+        c.execute("DELETE FROM documents WHERE library_id=?", (item_id,))
+        c.commit()
+    finally:
+        c.close()
+
+
+def list_library_documents(library_id):
+    """某个资料下的全部文档。"""
+    c = connect()
+    try:
+        return _rows(c.execute("SELECT * FROM documents WHERE library_id=? ORDER BY id",
+                               (library_id,)).fetchall())
+    finally:
+        c.close()
+
+
 # ================================================================ settings
 def get_setting(key, default=None):
     c = connect()
@@ -409,23 +520,107 @@ def all_settings():
 
 
 # ================================================================ jobs / events
-def add_job(kind, detail=""):
+def add_job(kind, detail="", project_id=0, user_id=0, title="", variant=""):
     now = _now()
     c = connect()
     try:
-        cur = c.execute("INSERT INTO jobs(kind,status,detail,created_at,updated_at) "
-                        "VALUES(?,'running',?,?,?)", (kind, detail, now, now))
+        cur = c.execute(
+            "INSERT INTO jobs(kind,title,variant,project_id,user_id,status,detail,created_at,updated_at) "
+            "VALUES(?,?,?,?,?,'running',?,?,?)",
+            (kind, title, variant, project_id, user_id, detail, now, now))
         c.commit()
         return cur.lastrowid
     finally:
         c.close()
 
 
-def finish_job(job_id, status="done", detail=""):
+def create_job(kind, project_id=0, user_id=0, title="", detail="", variant="") -> dict:
+    jid = add_job(kind, detail=detail, project_id=project_id, user_id=user_id,
+                  title=title, variant=variant)
+    return get_job(jid)
+
+
+def get_job(job_id):
     c = connect()
     try:
-        c.execute("UPDATE jobs SET status=?, detail=?, updated_at=? WHERE id=?",
-                  (status, (detail or "")[:4000], _now(), job_id))
+        return _row(c.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone())
+    finally:
+        c.close()
+
+
+def find_active_job(project_id, kind):
+    """某项目某类型当前正在运行的任务(用于幂等:已有则复用,避免重复触发)。"""
+    c = connect()
+    try:
+        return _row(c.execute(
+            "SELECT * FROM jobs WHERE project_id=? AND kind=? AND status='running' "
+            "ORDER BY id DESC LIMIT 1", (project_id, kind)).fetchone())
+    finally:
+        c.close()
+
+
+def list_project_jobs(project_id, limit=30, active_only=False):
+    c = connect()
+    try:
+        sql = "SELECT * FROM jobs WHERE project_id=?"
+        if active_only:
+            sql += " AND status='running'"
+        sql += " ORDER BY id DESC LIMIT ?"
+        return _rows(c.execute(sql, (project_id, limit)).fetchall())
+    finally:
+        c.close()
+
+
+def append_job_progress(job_id, text, level="info", pct=None):
+    """向任务追加一条进度明细(JSON 数组,保留最近 200 条)。"""
+    c = connect()
+    try:
+        r = c.execute("SELECT progress FROM jobs WHERE id=?", (job_id,)).fetchone()
+        if not r:
+            return
+        try:
+            items = json.loads(r["progress"] or "[]")
+        except Exception:
+            items = []
+        items.append({"ts": _now(), "level": level, "text": text, "pct": pct})
+        items = items[-200:]
+        c.execute("UPDATE jobs SET progress=?, updated_at=? WHERE id=?",
+                  (json.dumps(items, ensure_ascii=False), _now(), job_id))
+        c.commit()
+    finally:
+        c.close()
+
+
+def finish_job(job_id, status="done", detail="", result=None, error=""):
+    c = connect()
+    try:
+        c.execute("UPDATE jobs SET status=?, detail=?, result=?, error=?, updated_at=? WHERE id=?",
+                  (status, (detail or "")[:4000],
+                   json.dumps(result, ensure_ascii=False, default=str) if result is not None else "",
+                   (error or "")[:4000], _now(), job_id))
+        c.commit()
+    finally:
+        c.close()
+
+
+def reap_stale_jobs(project_id=None, ttl_minutes=30):
+    """看门狗:把长时间未更新进度的 running 任务标记失败。
+
+    任务跑在进程内线程里;若 runner 卡死且不再上报进度,updated_at 便停止刷新,
+    超过 ttl 即视为卡死并释放「同项目同 kind 唯一运行」的占用,使前端可重新触发。
+    正常执行的任务每次上报进度都会刷新 updated_at,不会被误判。
+    """
+    cutoff = time.strftime("%Y-%m-%d %H:%M:%S",
+                           time.localtime(time.time() - max(1, ttl_minutes) * 60))
+    c = connect()
+    try:
+        sql = ("UPDATE jobs SET status='failed', error=?, updated_at=? "
+               "WHERE status='running' AND updated_at < ?")
+        args = ["任务超时(超过 %d 分钟无进度),已终止" % ttl_minutes, _now(), cutoff]
+        if project_id is not None:
+            sql += " AND project_id=?"
+            args.append(project_id)
+        c.execute(sql, args)
         c.commit()
     finally:
         c.close()
@@ -436,6 +631,21 @@ def list_jobs(limit=50):
     try:
         return _rows(c.execute("SELECT * FROM jobs ORDER BY id DESC LIMIT ?",
                                (limit,)).fetchall())
+    finally:
+        c.close()
+
+
+def fail_orphan_jobs(reason="服务重启,任务中断"):
+    """启动时把残留的 running 任务标记失败。
+
+    任务跑在进程内线程池,进程重启后这些任务已不存在;若不清理,前端会永远
+    显示「处理中」。(单进程部署假设;多 worker 场景下请勿在启动时调用。)
+    """
+    c = connect()
+    try:
+        c.execute("UPDATE jobs SET status='failed', error=?, updated_at=? "
+                  "WHERE status='running'", (reason, _now()))
+        c.commit()
     finally:
         c.close()
 

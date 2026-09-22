@@ -8,6 +8,7 @@ __pycache__/
 # Node / 前端
 **/node_modules/
 dist/
+*.tsbuildinfo
 
 # 杂项
 .DS_Store

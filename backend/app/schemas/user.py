@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 class UserCreate(BaseModel):
     email: str = Field(..., min_length=3, max_length=128)
-    password: str = Field(..., min_length=6, max_length=128)
+    password: str = ""            # 可空:留空表示由用户首次登录时自行设置
     displayName: str = ""
     role: str = "designer"
 

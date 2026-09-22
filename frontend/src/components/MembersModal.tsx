@@ -21,13 +21,14 @@ export default function MembersModal({
   const [role, setRole] = useState<string>('viewer')
   const [loading, setLoading] = useState(false)
 
+  // 共享管理仅限项目所有者或管理员(被共享者不能再转授)
+  const canManage = me.role === 'admin' || project.ownerId === me.id
+
   async function load() {
     setLoading(true)
     try {
       setMembers(await get<ProjectMember[]>(`/api/projects/${project.id}/members`))
-      if (me.role === 'admin') {
-        setUsers(await get<User[]>('/api/users'))
-      }
+      setUsers(await get<User[]>('/api/users/directory'))
     } catch (e) {
       message.error(errMsg(e))
     } finally {
@@ -70,10 +71,12 @@ export default function MembersModal({
 
   return (
     <Modal title={`成员授权 · ${project.title}`} open={open} onCancel={onClose} footer={null} width={640}>
-      {me.role === 'admin' ? (
+      {canManage ? (
         <Space style={{ marginBottom: 12 }}>
           <Select
             style={{ width: 240 }}
+            showSearch
+            optionFilterProp="label"
             placeholder="选择用户"
             value={userId}
             onChange={setUserId}
@@ -97,7 +100,7 @@ export default function MembersModal({
         </Space>
       ) : (
         <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
-          仅管理员可从用户列表选择授权对象;项目所有者可移除已有成员。
+          仅项目所有者或管理员可管理共享成员;被共享的项目不能再转授他人。
         </Typography.Text>
       )}
       <Table
@@ -124,11 +127,12 @@ export default function MembersModal({
           {
             title: '',
             width: 80,
-            render: (_, m) => (
-              <Popconfirm title="移除该成员?" onConfirm={() => remove(m.userId)}>
-                <a>移除</a>
-              </Popconfirm>
-            ),
+            render: (_, m) =>
+              canManage ? (
+                <Popconfirm title="移除该成员?" onConfirm={() => remove(m.userId)}>
+                  <a>移除</a>
+                </Popconfirm>
+              ) : null,
           },
         ]}
       />
