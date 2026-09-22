@@ -3,7 +3,7 @@ import axios, { AxiosRequestConfig } from 'axios'
 /**
  * 统一 HTTP 客户端。
  * - 会话在 httpOnly Cookie 里,所有请求带 Cookie(withCredentials)。
- * - baseURL 为空,开发期走 vite 的 /api 代理到 http://localhost:8000。
+ * - baseURL 为空,开发期走 vite 的 /api 代理(代理目标端口见 vite.config.ts,默认为后端 8000)。
  * - 401 时通知应用清空登录态并跳转 /login。
  */
 export const api = axios.create({

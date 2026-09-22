@@ -139,7 +139,7 @@ export default function Login({ onLoggedIn }: { onLoggedIn: (u: User) => void })
               showIcon
               style={{ marginBottom: 12 }}
               message="无法连接后端服务"
-              description="请确认后端已在 http://localhost:8000 启动后重试。"
+              description="请确认后端服务已启动后重试(开发模式下请用 start.ps1 同时启动前后端)。"
             />
           ) : null}
 

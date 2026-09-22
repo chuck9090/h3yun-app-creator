@@ -1,17 +1,17 @@
 # h3yun-app-creator 一键启动(Windows PowerShell 7) —— 前后端分离,双进程
 #
 # 用法:
-#   pwsh -File start.ps1                 # 同时启动后端(8000)+ 前端 dev(5173)
+#   pwsh -File start.ps1                 # 同时启动后端(8990)+ 前端 dev(8991)
 #   pwsh -File start.ps1 -BackendOnly    # 只启动后端
 #   pwsh -File start.ps1 -FrontendOnly   # 只启动前端
 #   pwsh -File start.ps1 -Reload         # 后端带热重载(开发用;多进程易致 SQLite 锁竞争,默认关闭)
 #   pwsh -File start.ps1 -Prod           # 构建前端静态产物(不启 dev server)
 #
-# 访问: http://localhost:5173   (前端; /api 自动代理到后端 8000)
-# API 文档: http://localhost:8000/docs
+# 访问: http://localhost:8991   (前端; /api 自动代理到后端 8990)
+# API 文档: http://localhost:8990/docs
 param(
-    [int]$BackendPort = 8000,
-    [int]$FrontendPort = 5173,
+    [int]$BackendPort = 8990,
+    [int]$FrontendPort = 8991,
     [switch]$BackendOnly,
     [switch]$FrontendOnly,
     [switch]$Reload,
@@ -101,6 +101,9 @@ if ($startFrontend) {
         $skipped += "前端:$FrontendPort"
     } else {
         Write-Host "启动前端: http://localhost:$FrontendPort" -ForegroundColor Green
+        # 把后端端口传给前端 dev server:vite.config.ts 的 /api 代理据此定位后端,
+        # 避免端口写死(改了 -BackendPort 后代理仍指向旧端口导致「连不上后端」)。
+        $env:H3AC_BACKEND_PORT = "$BackendPort"
         $procs += Start-Process npm.cmd -PassThru -WorkingDirectory "$root\frontend" `
             -ArgumentList @("run", "dev", "--", "--port", "$FrontendPort")
     }
