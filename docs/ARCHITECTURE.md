@@ -24,7 +24,9 @@
 DB/上传件/密钥/项目工作区/知识库产物/凭据都在 `data/`。
 
 **前后端完全分离**:两个独立目录、独立依赖、独立启动;后端**不托管前端静态资源**。
-开发期:`localhost:5173`(前端) ↔ `localhost:8000`(后端),同 host 不同端口 → Cookie 天然共享。
+开发期:`localhost:8991`(前端) ↔ `localhost:8990`(后端),同 host 不同端口 → Cookie 天然共享
+(端口可由 `start.ps1` 的 `-BackendPort` / `-FrontendPort` 调整;前端 `/api` 代理目标取自
+`H3AC_BACKEND_PORT`,由启动脚本自动传递)。
 生产期:用反向代理(nginx)把二者置于同一源(或同域不同路径)。
 
 ## 1. 用户操作流程(对应实现)
@@ -35,7 +37,7 @@ DB/上传件/密钥/项目工作区/知识库产物/凭据都在 `data/`。
 | 2 | 邮件+密码登录 | 登录页 | `POST /api/auth/login` 下发 httpOnly Cookie |
 | 3 | 看到自己的/被授权的项目 | 项目列表 | `GET /api/projects`(owner 或 member) |
 | 4 | 新建项目:项目名称 / 应用编码 / 引擎编码 / h3_token | 新建弹窗 | `POST /api/projects`(engineCode 用户填/由 token 预填) |
-| 5 | 上传文件(拖拽)+ 富文本需求 | 需求步骤页 | 文档解析 + 需求保存 |
+| 5 | 上传资料(需求清单/会议纪要/其他)+ 富文本补充 | 需求步骤页 | 文档解析 + 需求保存(需求清单限一份,重复 409) |
 | 6 | 点「生成方案」→ 系统设计方案(HTML 展示,底层 md) | 方案页 | `POST .../plan/generate` |
 | 7 | 打开方案编辑页改 markdown | md 编辑器 | `PUT .../plan` |
 | 8 | 点「生成业务流程图」 | 流程图页(Mermaid) | `POST .../flowchart/generate` |
@@ -302,7 +304,7 @@ GET  /api/jobs                (admin)             任务总表(异步任务历�
 | `H3AC_SECRET` | 自动生成 `data/secret.key` | Cookie/JWT/凭据加密密钥 |
 | `H3AC_ADMIN_EMAIL` / `H3AC_ADMIN_PASSWORD` | 空(不自动建) | **设置后**才在启动时创建管理员;未设置则走前端「初始化管理员」 |
 | `H3AC_LLM_BASE_URL` / `H3AC_LLM_API_KEY` / `H3AC_LLM_MODEL` | 空 | LLM(可被 DB 设置覆盖) |
-| `H3AC_CORS_ORIGINS` | `http://localhost:5173` | 允许的前端源 |
+| `H3AC_CORS_ORIGINS` | `http://localhost:8991,http://127.0.0.1:8991`(另含旧 5173) | 允许的前端源 |
 | `H3AC_COOKIE_SECURE` | 空(HTTP) | 生产 HTTPS 置 `1` |
 | `H3AC_NIGHTLY_HOUR` / `H3AC_NIGHTLY_MIN` | `2` / `0` | 夜间知识库批处理 |
 | `H3AC_MAX_UPLOAD_MB` | `30` | 单文件上传上限 |
@@ -313,6 +315,7 @@ GET  /api/jobs                (admin)             任务总表(异步任务历�
 | `H3AC_CTX_CATALOG_THRESHOLD` | `1000000` | 参考资料超过该 token 量 → 切「目录 + 按需取件」模式 |
 | `H3AC_CTX_MAX_SELECT_FILES` / `H3AC_CTX_MAX_SELECT_ROUNDS` | `12` / `2` | 目录模式下模型单次/总索取文件数上限 |
 | `H3AC_CTX_SAMPLE_ROWS` | `8` | 紧凑渲染中单表保留的数据行样例上限(字段清单不受限) |
+| `H3AC_CTX_MAX_LIST_ROWS` / `H3AC_CTX_LIST_MAX_COLS` | `200` / `6` | **清单表**(列数 ≤ 该值,如需求清单「功能清单」)保留的行数上限;每行都是需求项,不取样例 |
 | `H3AC_IMG_MAX_PER_FILE` | `6` | 单文件最多识别的内嵌图片数(0=不识别) |
 | `H3AC_PDF_OCR_MIN_CHARS` / `H3AC_PDF_OCR_MAX_PAGES` | `40` / `8` | 扫描件判定阈值与整页识别页数上限 |
 | `H3AC_IMG_MAX_MB` | `4` | 单张图片入模上限(MB) |

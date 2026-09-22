@@ -5,12 +5,16 @@
 ## 1. 开发/内网单机(最快)
 
 ```powershell
-pwsh -File start.ps1                 # 后端 8000 + 前端 5173,自动装依赖
+pwsh -File start.ps1                 # 后端 8990 + 前端 8991,自动装依赖
 ```
 
-访问 <http://localhost:5173>。**首次使用**:系统无用户时,登录页显示「初始化管理员」,
+访问 <http://localhost:8991>。**首次使用**:系统无用户时,登录页显示「初始化管理员」,
 由你设定邮箱+密码(无默认弱口令)。若要在启动时自动建管理员,先设置
 `H3AC_ADMIN_EMAIL` / `H3AC_ADMIN_PASSWORD`。
+
+> 默认端口后端 **8990**、前端 **8991**;可用 `-BackendPort` / `-FrontendPort` 调整
+> (启动脚本会把后端端口通过 `H3AC_BACKEND_PORT` 传给前端,`/api` 代理自动跟随)。
+> 端口被占用时脚本会跳过启动(避免重复起多实例导致 SQLite 锁竞争)。
 
 只启动单个:
 
@@ -19,16 +23,19 @@ pwsh -File start.ps1 -BackendOnly
 pwsh -File start.ps1 -FrontendOnly
 ```
 
+其他参数:`-Reload` 后端热重载(开发用,默认关闭);`-Prod` 只构建前端静态产物;
+`-SkipInstall` 跳过依赖检查。
+
 ## 2. 手工分别启动
 
 ```powershell
 # 后端(工作目录 backend/)
 python -X utf8 -m pip install -r requirements.txt
-python -X utf8 -m uvicorn app.main:app --host localhost --port 8000 --reload
+python -X utf8 -m uvicorn app.main:app --host localhost --port 8990
 
 # 前端(工作目录 frontend/)
 npm install
-npm run dev            # http://localhost:5173,/api 代理到 8000
+npm run dev            # http://localhost:8991,/api 代理到 8990
 ```
 
 ## 3. 生产部署(静态 + 反向代理)
@@ -36,7 +43,7 @@ npm run dev            # http://localhost:5173,/api 代理到 8000
 ```powershell
 pwsh -File start.ps1 -Prod          # 构建前端 frontend/dist
 # 后端以多 worker 运行(去掉 --reload):
-cd backend; python -X utf8 -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+cd backend; python -X utf8 -m uvicorn app.main:app --host 0.0.0.0 --port 8990
 ```
 
 nginx 参考(同源,保证 Cookie 携带):
@@ -51,7 +58,7 @@ server {
         try_files $uri $uri/ /index.html;   # HashRouter 其实不需要,但无害
     }
     location /api/ {                   # 反代后端
-        proxy_pass http://127.0.0.1:8000;
+        proxy_pass http://127.0.0.1:8990;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
     }
@@ -65,9 +72,10 @@ server {
 3. 「新建项目」:填**项目名称 / 引擎编码(engineCode) / h3_token**;应用编码(appCode)可后填;
    项目编号(slug)由系统自动生成,无需填写;
    粘贴 h3_token 会自动带出 engineCode(仍可修改);
-4. 工作台「需求」:拖拽上传已有系统文档 / 需求 / 会议记录,或富文本补充;
-5. 「生成方案」→ HTML 展示系统设计方案(底层 markdown);可进编辑页改;
-6. 「生成业务流程图」(Mermaid);不满意→回改方案→重生成;
+4. 工作台「需求」:上传本项目资料 —— **需求清单**(需求基准,**每项目限一份**)、
+   **会议纪要 / 其他**(补充细化,可多份);也可勾选「资料库」共享资料,或富文本补充;
+5. 「生成方案」→ HTML 展示系统设计方案(底层 markdown);模块按需求清单「功能模块」分组,清单表单逐一覆盖;可进编辑页改;
+6. 「生成业务流程图」(Mermaid,以表单为节点、模块分组、表单间关系为边);不满意→回改方案→重生成;
 7. 「生成 ER 图」→ 可视化表图谱;可改表名/加表/改字段/控件类型/加字段;
    并可编辑**自动化(触发器)**:某表数据生效/失效/更新时自动增删改别的表(条件、动作、字段映射、写子表);
 8. 「生成氚云应用」→ 据 ER 结构生成 `sheets/*.json` + `automations/*.json` 并写入氚云(**先建表 → 按分组归入应用菜单 → 后建触发器**);可回读核对。
@@ -79,7 +87,7 @@ server {
 | `H3AC_DATA_DIR` | `<仓库根>/data` | **运行数据目录**(DB/密钥/上传件/工作区/知识库产物) |
 | `H3AC_SECRET` | 自动生成 `data/secret.key` | 会话 JWT 与凭据加密密钥 |
 | `H3AC_ADMIN_EMAIL` / `H3AC_ADMIN_PASSWORD` | 空(不自动建) | **设置后**才在启动时创建管理员;未设置则走前端「初始化管理员」 |
-| `H3AC_CORS_ORIGINS` | `http://localhost:5173` | 允许的前端源(逗号分隔) |
+| `H3AC_CORS_ORIGINS` | `http://localhost:8991,...`(另含旧 5173) | 允许的前端源(逗号分隔) |
 | `H3AC_COOKIE_SECURE` | 空(HTTP) | 生产 HTTPS 置 `1` |
 | `H3AC_LLM_BASE_URL` / `H3AC_LLM_API_KEY` / `H3AC_LLM_MODEL` | 空 | LLM 回退配置;管理员也可在「系统设置」页填写(优先) |
 | `H3AC_NIGHTLY_HOUR` / `H3AC_NIGHTLY_MIN` | `2` / `0` | 每晚知识库批处理 |
@@ -91,6 +99,7 @@ server {
 | `H3AC_CTX_CATALOG_THRESHOLD` | `1000000` | 参考资料超过该 token 量 → 目录 + 按需取件模式 |
 | `H3AC_CTX_MAX_SELECT_FILES` / `H3AC_CTX_MAX_SELECT_ROUNDS` | `12` / `2` | 目录模式索取文件数上限 |
 | `H3AC_CTX_SAMPLE_ROWS` | `8` | 单表数据行样例上限(字段清单不受限) |
+| `H3AC_CTX_MAX_LIST_ROWS` / `H3AC_CTX_LIST_MAX_COLS` | `200` / `6` | **清单表**(列数 ≤ 该值,如需求清单「功能清单」)保留的行数上限;每行都是需求项 |
 | `H3AC_IMG_MAX_PER_FILE` | `6` | 单文件最多识别的内嵌图片数(0=不识别) |
 | `H3AC_PDF_OCR_MIN_CHARS` / `H3AC_PDF_OCR_MAX_PAGES` | `40` / `8` | 扫描件判定阈值 / 整页识别页数上限 |
 | `H3AC_IMG_MAX_MB` | `4` | 单张图片入模上限(MB) |
@@ -113,11 +122,14 @@ server {
 
 ```powershell
 # 后端(cwd=backend/)
-python -X utf8 tests/test_core_api.py        # 认证/用户/项目/文档 49 项
-python -X utf8 tests/test_pipeline_api.py    # 需求→方案→流程图→ER→部署 20 项
+python -X utf8 tests/test_core_api.py        # 认证/用户/项目/文档/资料清单限一份 52 项
+python -X utf8 tests/test_pipeline_api.py    # 需求→方案→流程图→ER→部署 21 项
 python -X utf8 tests/test_automations.py     # 自动化全链路 + 分组计划 + 设计清洗安全 19 项
 python -X utf8 tests/test_security.py        # 会话/权限/上传/凭据安全 33 项
-python -X utf8 tests/smoke_real_server.py    # 真实端口 + Cookie 冒烟 16 项
+python -X utf8 tests/test_context.py         # 参考资料上下文:预算/截断/目录取件/需求清单/必做表单 71 项
+python -X utf8 tests/test_extract.py         # 结构化抽取:表格/合并单元格/图片 MIME/PDF 配额 31 项
+python -X utf8 tests/test_library.py         # 资料库:重名/权限/删除刷新/library.md 23 项
+python -X utf8 tests/smoke_real_server.py    # 真实端口 + Cookie 冒烟
 
 # 前端(cwd=frontend/)
 npm run typecheck
@@ -126,9 +138,11 @@ npm run build:only
 
 ## 8. 说明:AI 参考资料来源
 
-- **AI 出方案/表单结构的参考资料** = ①用户在本项目上传的文档(已有系统/需求/会议等,直接作为
-  模型上下文)+ ②本部署已建项目的语料(`data/knowledge/`,`engine_bridge.refresh_knowledge` 编译)。
-  **不含任何内置样本。**
+- **AI 出方案/表单结构的参考资料** = ①用户在本项目上传的资料 —— **需求清单**(需求基准,每项目限一份)、
+  **会议纪要 / 其他**(补充细化);②本部署已建项目的语料(`data/knowledge/`,`engine_bridge.refresh_knowledge` 编译);
+  ③(可选)项目勾选「资料库」共享资料,作为**外部参考资料**只借鉴字段/口径。**不含任何内置样本。**
+- 上下文链路:上传文档先做**结构化抽取**(表格字段/列名无损、内嵌图片与扫描件走视觉识别),
+  再按 token 预算三档喂模型(inline 全量 / 超预算截断 / 超大转「目录 + 按需取件」);需求清单等清单表保留全部行。
 - `h3design/h3platform/h3verify/h3service` 是**确定性引擎**,Web 后端直接复用。
 - 凭据由用户在新建项目时提供、加密存库,且**绝不回落到运行目录配置**(避免误建到别的应用);
   仓库内不存在任何凭据文件。
