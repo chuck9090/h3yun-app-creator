@@ -33,6 +33,23 @@
 - **不能夹字面量**:`{pname}-{chgtype}` 被拒,报 `表单数据标题中配置的字段不正确，请检查`(平台把占位之外的字面文本也当字段解析)。要分隔符就靠占位本身,别写 `-`/空格/斜杠。
 - 失败时 SaveForm 返回 `{Successful:false, ErrorMessage:...}`,**不抛异常** —— 引擎建表逻辑的 `except` 分支捕获不到,只落 `err=""`、`detail=""`(本机日志看不出原因)。排障要手工重放 save_form_console 打印响应。
 
+## 字段/表单编码不得占用保留字(平台自带编码 + MySQL 关键字,2026-09-22)
+- **两类保留字**:①氚云平台自带编码(主表 ObjectId/Name/CreatedBy/OwnerId/OwnerDeptId/CreatedTime/
+  ModifiedBy/ModifiedTime/WorkflowInstanceId/Status;子表 ParentObjectId/ParentPropertyName/ParentIndex;
+  关联多选中间表 ValueIndex/PropertyValue;另 State、SeqNo);②**MySQL 保留关键字** —— 字段编码会成为
+  `i_表单编码` 的**列名**,撞上会让 SQL 报表 / SQL 高级数据源失败:status/order/group/key/desc/rank/
+  system/values/index/range…(完整列表见 `h3design/dsl.py` 的 `MYSQL_RESERVED`)。
+- 大小写不敏感;换业务别名即可(status→billStatus、order→saleOrder、group→mgroup)。
+- **编码只含字母数字**:任何符号(下划线/连字符/空格/点号/括号/斜杠/中文)都不允许;含符号的编码由
+  `clean_design` 自动驼峰化(`客户-档案`→`customerFile`、`plan_begin`→`planBegin`),**不丢表**;
+  但含路径分隔符 `/ \` 或 `..` 的 key 属**危险键,直接剔除**(安全边界,不尝试修复)。
+- **校验范围**:字段编码、**子表列编码**、**表单 key(主表编码)**、**子表 key** —— 四者都会成为
+  数据库列名/表名,一律校验。生成侧 `h3service.design.clean_design` 对撞字编码自动改名(加
+  `Field`/`Form` 后缀)并同步重映射 `assoc` 与自动化 `form`/`target`;`h3design.dsl._check_reserved`
+  在 build 侧兜底拦截。
+- **已建表例外**:`registry.json` 里 `created: true` 的表,其字段/子表列编码**原样保留**(线上列
+  已固定,改名=另起一列、丢数据);`clean_design` 与 build 侧都放过。**未建表**时才拦/改名。
+
 ## 系统拥有者字段(申请人/申请部门)
 - 用户界面把申请改成系统字段后实证:FormLayout type 203(OwnerId)/204(OwnerDeptId),Options.ControlKey 仍 `FormUser`/`FormDepartment`;**不进 Properties**;OwnerId 带 `MappingControls: '{"ParentId":"OwnerDeptId"}'`。DSL 里用 `useOwner` + layout 引用(见 dsl.owner_presets,Options 逐字对照线上)。
 - v1 SchemaStr controlType = FormOwner/FormOwnerDepartment(dataType 26),SaveForm 通道不需显式给。

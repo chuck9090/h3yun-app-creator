@@ -355,24 +355,91 @@ def _build_rollup(spec, registry, key, label, self_code, proj_dir=None):
 
 SEQNO_KEY = "SeqNo"       # 流水号字段编码固定 SeqNo（线上样本同款），定义里可省
 
-# 平台自带编码：每张表单都有这些列，自己再拿它们当控件 key / 子表列 key 会出问题
-# （客户 2026-09-16 给的单子 10 个 + ObjectId / WorkflowInstanceId，一并拦）。
-# SeqNo 例外——它本来就是流水号控件的固定编码。
-RESERVED_KEYS = ("Name", "SeqNo", "CreatedTime", "CreatedBy", "ModifiedTime",
-                 "ModifiedBy", "OwnerId", "OwnerDeptId", "Status", "State",
-                 "ObjectId", "WorkflowInstanceId")
+# ---------------------------------------------------------------- 保留字（编码不得占用）
+# 字段编码会成为氚云 `i_表单编码` / `i_子表控件编码` 表的**列名**，撞上下列两类保留字会出问题。
+#
+# ① 氚云平台自带编码（见《数据库表结构详解》h3yunpro.github.io/docs/database）：
+#    主表 i_表单编码：ObjectId Name CreatedBy OwnerId OwnerDeptId CreatedTime
+#                    ModifiedBy ModifiedTime WorkflowInstanceId Status
+#    子表 i_子表控件编码：ObjectId Name ParentObjectId ParentPropertyName ParentIndex
+#    关联表单多选中间表：ObjectId ValueIndex PropertyValue
+#    另：State（系统表 H_* 用）、SeqNo（流水号控件固定编码，普通控件不得占用）
+PLATFORM_RESERVED = (
+    "ObjectId", "Name", "CreatedBy", "OwnerId", "OwnerDeptId",
+    "CreatedTime", "ModifiedBy", "ModifiedTime", "WorkflowInstanceId", "Status",
+    "ParentObjectId", "ParentPropertyName", "ParentIndex",
+    "ValueIndex", "PropertyValue",
+    "State", "SeqNo",
+)
+# ② MySQL 保留关键字（8.0）：字段编码=列名，列名撞上它会让 SQL 报表/高级数据源里的语句失败。
+MYSQL_RESERVED = (
+    "ACCESSIBLE", "ADD", "ALL", "ALTER", "ANALYZE", "AND", "AS", "ASC", "ASENSITIVE",
+    "BEFORE", "BETWEEN", "BIGINT", "BINARY", "BLOB", "BOTH", "BY", "CALL", "CASCADE",
+    "CASE", "CHANGE", "CHAR", "CHARACTER", "CHECK", "COLLATE", "COLUMN", "CONDITION",
+    "CONSTRAINT", "CONTINUE", "CONVERT", "CREATE", "CROSS", "CUBE", "CUME_DIST",
+    "CURRENT_DATE", "CURRENT_TIME", "CURRENT_TIMESTAMP", "CURRENT_USER", "CURSOR",
+    "DATABASE", "DATABASES", "DAY_HOUR", "DAY_MICROSECOND", "DAY_MINUTE", "DAY_SECOND",
+    "DEC", "DECIMAL", "DECLARE", "DEFAULT", "DELAYED", "DELETE", "DENSE_RANK", "DESC",
+    "DESCRIBE", "DETERMINISTIC", "DISTINCT", "DISTINCTROW", "DIV", "DOUBLE", "DROP",
+    "DUAL", "EACH", "ELSE", "ELSEIF", "EMPTY", "ENCLOSED", "ESCAPED", "EXCEPT", "EXISTS",
+    "EXIT", "EXPLAIN", "FALSE", "FETCH", "FIRST_VALUE", "FLOAT", "FLOAT4", "FLOAT8",
+    "FOR", "FORCE", "FOREIGN", "FROM", "FULLTEXT", "FUNCTION", "GENERATED", "GET",
+    "GRANT", "GROUP", "GROUPING", "GROUPS", "HAVING", "HIGH_PRIORITY",
+    "HOUR_MICROSECOND", "HOUR_MINUTE", "HOUR_SECOND", "IF", "IGNORE", "IN", "INDEX",
+    "INFILE", "INNER", "INOUT", "INSENSITIVE", "INSERT", "INT", "INT1", "INT2", "INT3",
+    "INT4", "INT8", "INTEGER", "INTERVAL", "INTO", "IO_AFTER_GTIDS", "IO_BEFORE_GTIDS",
+    "IS", "ITERATE", "JOIN", "JSON_TABLE", "KEY", "KEYS", "KILL", "LAG", "LAST_VALUE",
+    "LATERAL", "LEAD", "LEADING", "LEAVE", "LEFT", "LIKE", "LIMIT", "LINEAR", "LINES",
+    "LOAD", "LOCALTIME", "LOCALTIMESTAMP", "LOCK", "LONG", "LONGBLOB", "LONGTEXT",
+    "LOOP", "LOW_PRIORITY", "MASTER_BIND", "MASTER_SSL_VERIFY_SERVER_CERT", "MATCH",
+    "MAXVALUE", "MEDIUMBLOB", "MEDIUMINT", "MEDIUMTEXT", "MIDDLEINT",
+    "MINUTE_MICROSECOND", "MINUTE_SECOND", "MOD", "MODIFIES", "NATURAL", "NOT",
+    "NO_WRITE_TO_BINLOG", "NTH_VALUE", "NTILE", "NULL", "NUMERIC", "OF", "ON",
+    "OPTIMIZE", "OPTIMIZER_COSTS", "OPTION", "OPTIONALLY", "OR", "ORDER", "OUT", "OUTER",
+    "OUTFILE", "OVER", "PARTITION", "PERCENT_RANK", "PRECISION", "PRIMARY", "PROCEDURE",
+    "PURGE", "RANGE", "RANK", "READ", "READS", "READ_WRITE", "REAL", "RECURSIVE",
+    "REFERENCES", "REGEXP", "RELEASE", "RENAME", "REPEAT", "REPLACE", "REQUIRE",
+    "RESIGNAL", "RESTRICT", "RETURN", "REVOKE", "RIGHT", "RLIKE", "ROW", "ROWS",
+    "ROW_NUMBER", "SCHEMA", "SCHEMAS", "SECOND_MICROSECOND", "SELECT", "SENSITIVE",
+    "SEPARATOR", "SET", "SHOW", "SIGNAL", "SMALLINT", "SPATIAL", "SPECIFIC", "SQL",
+    "SQLEXCEPTION", "SQLSTATE", "SQLWARNING", "SQL_BIG_RESULT", "SQL_CALC_FOUND_ROWS",
+    "SQL_SMALL_RESULT", "SSL", "STARTING", "STORED", "STRAIGHT_JOIN", "SYSTEM", "TABLE",
+    "TERMINATED", "THEN", "TINYBLOB", "TINYINT", "TINYTEXT", "TO", "TRAILING", "TRIGGER",
+    "TRUE", "UNDO", "UNION", "UNIQUE", "UNLOCK", "UNSIGNED", "UPDATE", "USAGE", "USE",
+    "USING", "UTC_DATE", "UTC_TIME", "UTC_TIMESTAMP", "VALUES", "VARBINARY", "VARCHAR",
+    "VARCHARACTER", "VARYING", "VIRTUAL", "WHEN", "WHERE", "WHILE", "WINDOW", "WITH",
+    "WRITE", "XOR", "YEAR_MONTH", "ZEROFILL",
+)
+# 大小写不敏感：氚云列名与 MySQL 关键字都不区分大小写。
+_RESERVED_LOWER = {k.lower() for k in (PLATFORM_RESERVED + MYSQL_RESERVED)}
+
+# 兼容旧名（平台自带编码）
+RESERVED_KEYS = PLATFORM_RESERVED
+
+
+def is_reserved(key):
+    """编码（字段/子表列/表单）是否撞上平台自带编码或 MySQL 保留字（不区分大小写）。"""
+    return str(key or "").strip().lower() in _RESERVED_LOWER
+
 
 # 公式正文里的字段引用（{字段编码}），用于构建前校验引用的字段存在
 _FORMULA_REF_RE = re.compile(r"\{([^{}]+)\}")
 
 
 def _check_reserved(key, who=""):
-    """控件 key（= 建出来的字段编码）不能占用平台自带编码。"""
-    if key in RESERVED_KEYS:
+    """编码(字段 / 子表列 / 表单 / 子表)不能占用平台自带编码或 MySQL 保留字。
+
+    **任何时候都拦**(不像命名规则对「线上已建表」放过):这些编码会成为数据库的列名/表名,
+    撞上保留字会让氚云建表或在 SQL 报表/高级数据源里报底层错误,与线上是否已建无关。
+    """
+    if is_reserved(key):
         raise ValueError(
-            "%s: 控件 key %r 是平台自带编码，不能自己命名——每张表单本来就有这一列，"
-            "重名会出问题。系统字段的引用方式：申请人在 layout 里写 \"OwnerId\"、"
-            "申请部门写 \"OwnerDeptId\"（配 useOwner: true），其余由平台自动维护。"
+            "%s: 编码 %r 是平台自带编码或 MySQL 保留字,不能自己命名——平台每张表单/子表本来就有"
+            "这些列(主表 ObjectId/Name/Status…;子表 ParentObjectId/ParentPropertyName/ParentIndex;"
+            "中间表 ValueIndex/PropertyValue),重名会出问题;MySQL 保留字(status/order/group/desc/"
+            "key/rank/system/values/index… )还会让 SQL 报表与高级数据源失败。换业务别名即可"
+            "(如 status → billStatus、order → saleOrder)。系统字段的引用方式:申请人在 layout 里写"
+            " \"OwnerId\"、申请部门写 \"OwnerDeptId\"(配 useOwner: true),其余由平台自动维护。"
             % (who or "表单", key))
 
 
@@ -415,8 +482,9 @@ def _build_control(proj_dir, spec, registry, app_code, self_code="", strict=True
         raise ValueError("控件缺 key（type=%r）；只有流水号可省，编码恒为 %s"
                          % (t, SEQNO_KEY))
     if t not in ("seq_no", "seqno"):        # 流水号的编码本来就是 SeqNo
-        _check_reserved(key)
         if strict:
+            # 保留字与命名规则一样:仅**未建表**时拦(已建表线上列已固定,改名=另起一列)
+            _check_reserved(key)
             _check_key_name(key)
     if spec.get("assoc") and t not in ("dropdown", "query"):
         raise ValueError("%s: %s 不支持 assoc（选项来自另一张表只有下拉实证过，"
@@ -618,7 +686,9 @@ def _build_subtable(sheet_key, spec, proj_dir, registry, app_code, strict=True):
     code：registry[sheet_key]["subs"][subkey]["code"]（child schema 编码，
     建表前由 sheet_sub_specs 预注册；离线 check 未注册时留空占位）。"""
     sk = spec["key"]
+    # 子表编码 = 数据库表名 i_<sk>:命名规则与保留字都仅**未建表**时拦(见 strict 说明)
     if strict:
+        _check_reserved(sk, "子表")
         _check_key_name(sk, "子表")
     label = spec.get("label") or sk
     if not isinstance(spec.get("columns"), list) or not spec["columns"]:
@@ -691,9 +761,11 @@ def _build_json_sheet(path, proj_dir, app_code, registry, group_specs=None):
             and group not in [g["name"] for g in group_specs]:
         raise ValueError("%s: 分组 %r 未在 groups.json 声明（现有 %s）"
                          % (key, group, [g["name"] for g in group_specs]))
-    # 线上已建的表：编码已固定，命名规则放过（改了 key = 另起一列，老列数据留在原处）
+    # 表单编码 = 数据库表名 i_<key> / schemaCode:命名规则与保留字都仅**未建表**时拦
+    # (线上已建表编码已固定,改 key = 另起一列/新表,老数据留在原处)。
     strict = not _keys_frozen(registry, key)
     if strict:
+        _check_reserved(key, "表单 key")
         _check_key_name(key, "表单 key")
     controls, subs, extras, seq_default, fields_by_key, assoc = [], [], [], [], {}, {}
     extras_by_key = {}

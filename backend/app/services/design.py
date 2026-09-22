@@ -50,10 +50,17 @@ _SYSTEM = """你是氚云低代码平台的表单设计器。根据《系统设�
 - 没有明确需要联动写表的场景时,`automations` 给空数组 []。
 
 【key 命名硬规则(违反会导致建表失败,check 会拦)】
-1. 字段 key、表单 key、子表 key、子表列 key、自动化 key 一律:字母开头、只含字母数字、**不得有下划线**
-   (plan_begin ✗ → planBegin 或 planbegin ✓;1ab ✗);
-2. 不得占用平台自带编码:Name、SeqNo、CreatedTime、CreatedBy、ModifiedTime、ModifiedBy、
-   OwnerId、OwnerDeptId、Status、State、ObjectId、WorkflowInstanceId;
+1. 字段 key、表单 key、子表 key、子表列 key、自动化 key 一律:**只含英文字母与数字,必须字母开头,
+  不得出现任何符号**(下划线/连字符/空格/点号/括号/斜杠/中文 都不行)
+   (plan_begin ✗ → planBegin ✓;客户-档案 ✗ → customerFile ✓;1ab ✗;金额(元) ✗ → amount ✓);
+2. **不得占用保留字**,否则建表或 SQL 报表会失败:
+   - 平台自带编码(主表/子表/中间表都有):ObjectId、Name、CreatedBy、OwnerId、OwnerDeptId、
+     CreatedTime、ModifiedBy、ModifiedTime、WorkflowInstanceId、Status、State、SeqNo、
+     ParentObjectId、ParentPropertyName、ParentIndex、ValueIndex、PropertyValue;
+   - **MySQL 保留关键字**(字段编码会成为数据库列名,撞上会让 SQL 报表/高级数据源报错):
+     status、order、group、key、desc、select、from、where、rank、system、values、index、range、
+     char、int、float、decimal、date、time、if、in、is、and、or、not、null、left、right、join 等;
+     换成业务别名即可(如 status → billStatus、order → saleOrder、group → mgroup);
 3. `query` 的 `assoc` = 另一张表的 key(不要自引用,被引用表先建);
 4. `dropdown` / `radio` / `checkbox_list` 必须给 `dict`(引用 dicts 的分类名)或 `options`(字面量数组),二者其一;
 5. `useOwner:true` 时申请人与申请部门是系统字段,不要把 owner 写进 controls;

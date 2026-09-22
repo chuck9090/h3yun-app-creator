@@ -15,6 +15,7 @@ import os
 import re
 
 from . import engine as E
+from h3design import dsl as DSL
 
 # 控件类型 → 允许的额外键(通用键另加)。与 docs/schema_doc.md 控件表一致。
 COMMON_KEYS = {"type", "key", "label", "required", "readonly", "hideWhen", "uiNote"}
@@ -49,6 +50,12 @@ LAYOUT_ITEM_TYPES = {"group_title", "description"}
 SHEET_KEYS = {"title", "nameSchema", "useOwner", "layout", "group", "controls"}
 # 表单 key / 自动化 key = 文件名,必须防路径穿越(字母开头、纯字母数字)
 _NAME_OK = re.compile(r"^[A-Za-z][A-Za-z0-9]{0,47}$")
+# 含路径分隔符 / `..` 的 key 属**危险键**,一律剔除(不归一——安全边界,不尝试"修复"恶意输入)
+_PATH_UNSAFE = re.compile(r"[/\\]|\.\.")
+
+
+def _path_unsafe(k):
+    return bool(_PATH_UNSAFE.search(str(k or "")))
 # 自动化允许的键(见 docs/schema_doc.md「自动化」)
 AUTO_KEYS = {"key", "title", "form", "trigger", "sortKey", "names", "when", "actions"}
 AUTO_ACTION_KEYS = {"do", "target", "state", "isInsert", "match", "set", "owner", "sub"}
@@ -94,10 +101,12 @@ def clean_control(spec, in_subtable=False):
     return out
 
 
-def clean_sheet(sheet):
+def clean_sheet(sheet, frozen=False):
     """清洗一张表单定义;返回 None 表示非法(含 key 非法/为空)。
 
     **key 即 sheets/<key>.json 的文件名**,必须字母开头、纯字母数字(同样防路径穿越)。
+    `frozen=True`(表单线上已建):字段/子表列**编码原样保留**,不做命名/保留字规范化
+    (列已在平台固定,改名 = 另起一列,老列数据留在原处)。
     """
     if not isinstance(sheet, dict):
         return None
@@ -113,7 +122,7 @@ def clean_sheet(sheet):
            "layout": sheet.get("layout") or "auto4",
            "group": sheet.get("group") or ""}
     out["controls"] = controls
-    out["_kmap"] = normalize_sheet_keys(out)
+    out["_kmap"] = normalize_sheet_keys(out, frozen=frozen)
     return out
 
 
@@ -190,24 +199,57 @@ def _camel(k):
 
 
 def _norm_key(k, used):
-    if k and _KEY_OK.match(k):
+    """字段/子表列 key 归一:不合规 → 驼峰;撞**保留字**(平台自带编码 / MySQL 关键字)→ 改名。
+
+    字段编码就是 `i_表单` 的列名,撞保留字会导致建表或 SQL 报表失败,故必须排除。
+    """
+    k = str(k or "").strip()
+    if k and _KEY_OK.match(k) and not DSL.is_reserved(k):
         used.add(k)
         return k
     base = _camel(k) or "field"
+    if DSL.is_reserved(base):              # 如 status → statusField
+        base = base + "Field"
     cand, i = base, 2
-    while cand in used:
-        cand = base + str(i)
+    while cand in used or DSL.is_reserved(cand):
+        cand = "%s%d" % (base, i)
         i += 1
     used.add(cand)
     return cand
 
 
-def normalize_sheet_keys(sheet):
-    """把不合规**字段** key 规范化成驼峰(字母开头、无下划线),并同步重写全部引用。
+def _safe_sheet_key(k, used):
+    """表单 key 归一:含符号/不以字母开头/撞保留字时改名(驼峰化,必要时加 Form 后缀),
+    保证 `i_<key>` / schema 编码只含字母数字。"""
+    base = _camel(k) or "sheet"
+    cand = base if not DSL.is_reserved(base) else base + "Form"
+    i = 2
+    while cand in used or DSL.is_reserved(cand):
+        cand = "%sForm%d" % (base, i)
+        i += 1
+    used.add(cand)
+    return cand
 
-    历史项目线上已建的表,key 里可能有下划线(如 plan_begin/is_paid,规则对已建表放过)。
-    **作为新项目模板复用时必须规范化**,否则 `check`/`build` 会拒绝。
 
+def _safe_auto_key(k, used):
+    """自动化 key 归一(符号/非法字符 → 驼峰);自动化 key 是文件名与触发器 ObjectId,
+    不是数据库列名,故只需去符号与去重。"""
+    base = _camel(k) or "auto"
+    cand, i = base, 2
+    while cand in used:
+        cand = "%s%d" % (base, i)
+        i += 1
+    used.add(cand)
+    return cand
+
+
+def normalize_sheet_keys(sheet, frozen=False):
+    """把不合规**字段** key 规范化成驼峰(字母开头、无下划线)并排除保留字,并同步重写全部引用。
+
+    历史项目线上已建的表,key 里可能有下划线(如 plan_begin/is_paid)或撞保留字(如 status),
+    规则对已建表放过;**作为新项目模板复用时必须规范化**,否则 `check`/`build` 会拒绝。
+
+    - `frozen=True`:该表单**线上已建**,字段编码已固定 → 原样保留(不改名,避免另起列/丢数据)。
     - 布局项(group_title/description)**不规范化**:其 key 只是引用名,可随便起,
       且 layout 行靠它引用;若强行改名,layout 会悬空。
     - 流水号(seq_no)编码恒为 `SeqNo`,key 不参与字段命名约束。
@@ -216,6 +258,8 @@ def normalize_sheet_keys(sheet):
     """
     controls = sheet.get("controls") or []
     used, kmap = set(), {}
+    if frozen:
+        return kmap                    # 已建表:字段编码原样保留,不做任何规范化
 
     def take(k):
         nk = _norm_key(k, used)
@@ -225,7 +269,8 @@ def normalize_sheet_keys(sheet):
 
     for c in controls:
         t = c.get("type")
-        if c.get("key") and t not in LAYOUT_ITEM_TYPES:
+        # 流水号的编码恒为 SeqNo(key 可省),不参与字段命名/保留字约束
+        if c.get("key") and t not in LAYOUT_ITEM_TYPES and t not in ("seq_no", "seqno"):
             c["key"] = take(c["key"])
         if t == "subtable":
             for col in c.get("columns") or []:
@@ -257,10 +302,18 @@ def normalize_sheet_keys(sheet):
     return kmap
 
 
-def _remap_automation(auto, alias):
-    """把自动化里引用的**旧字段码**按 alias 重映射(尽力;跨表同名冲突不处理)。
+def _remap_automation(auto, alias, form_alias=None):
+    """把自动化里引用的**旧字段码**按 alias 重映射(尽力;跨表同名冲突不处理);
+    表单 key 若被归一(见 _safe_sheet_key),`form` / `target` 按 form_alias 重映射。
     引用位置:when.field、match[].field/ref、set[].from、sub.set[].from、
     set[].to/sub.set[].to(目标字段)、字段串 `子表.列` 的两段。"""
+    fa = form_alias or {}
+    if fa:
+        if auto.get("form") in fa:
+            auto["form"] = fa[auto["form"]]
+        for a in auto.get("actions") or []:
+            if isinstance(a, dict) and a.get("target") in fa:
+                a["target"] = fa[a["target"]]
     if not alias:
         return auto
 
@@ -292,17 +345,42 @@ def _remap_automation(auto, alias):
     return auto
 
 
-def clean_design(design):
+def clean_design(design, frozen_keys=None):
     """清洗整个设计:去重表 key、过滤空表、规范 dicts/groups/automations。
 
-    `automations`(触发器)遵循 docs/schema_doc.md 的 DSL;其中字段引用会按
-    字段 key 规范化结果做**尽力重映射**(同一别名在多个表单出现时不做区分)。
+    - 表单 key 撞保留字(平台自带编码 / MySQL 关键字)→ 改名(加 Form 后缀),并同步重映射
+      `assoc`(引用表)与自动化 `form`/`target`;**frozen_keys 里的表单除外**(线上已建,编码固定);
+    - 字段 key 撞保留字 → 改名(加 Field 后缀),被规范化结果按 `alias` 做**尽力重映射**到
+      自动化里的字段引用(同一别名在多个表单出现时不做区分);
+    - `frozen_keys` = 线上已建的表单 key 集合,其字段/子表列编码**原样保留**(避免另起列)。
     """
     if not isinstance(design, dict):
         raise E.EngineError("设计数据必须是对象")
+    frozen = set(frozen_keys or ())
+    raw_sheets = [s for s in (design.get("sheets") or []) if isinstance(s, dict)]
+
+    # 表单 key 归一(含符号不以字母开头 / 撞保留字):先收集现有 key,再分配安全名
+    skey_map, skeys = {}, set()
+    for s in raw_sheets:
+        k = str(s.get("key") or "").strip()
+        if k:
+            skeys.add(k)
+    for s in raw_sheets:
+        k = str(s.get("key") or "").strip()
+        if k and k not in skey_map and k not in frozen and not _path_unsafe(k) \
+                and (DSL.is_reserved(k) or not _NAME_OK.match(k)):
+            skey_map[k] = _safe_sheet_key(k, skeys)
+    if skey_map:
+        for s in raw_sheets:
+            if str(s.get("key") or "").strip() in skey_map:
+                s["key"] = skey_map[s["key"]]
+            for c in s.get("controls") or []:
+                if isinstance(c, dict) and c.get("assoc") in skey_map:
+                    c["assoc"] = skey_map[c["assoc"]]
+
     seen, sheets, alias = set(), [], {}
-    for s in design.get("sheets") or []:
-        cs = clean_sheet(s)
+    for s in raw_sheets:
+        cs = clean_sheet(s, frozen=(str(s.get("key") or "").strip() in frozen))
         if not cs or cs["key"] in seen:
             continue
         seen.add(cs["key"])
@@ -316,13 +394,21 @@ def clean_design(design):
     groups = [g if isinstance(g, str) else (g or {}).get("name")
               for g in (design.get("groups") or [])]
     groups = [g for g in groups if g]
+    raw_autos = [a for a in (design.get("automations") or []) if isinstance(a, dict)]
+    akeys = {str(a.get("key") or "").strip() for a in raw_autos if a.get("key")}
     seen_a, automations = set(), []
-    for a in design.get("automations") or []:
+    for a in raw_autos:
+        # 自动化 key 含符号 → 归一化(否则 clean_automation 会直接丢弃整条自动化);
+        # 含路径分隔符/`..` 的危险 key 不归一,交由 clean_automation 剔除。
+        k = str(a.get("key") or "").strip()
+        if k and not _path_unsafe(k) and not _NAME_OK.match(k):
+            a = dict(a)
+            a["key"] = _safe_auto_key(k, akeys)
         ca = clean_automation(a)
         if not ca or ca["key"] in seen_a:
             continue
         seen_a.add(ca["key"])
-        automations.append(_remap_automation(ca, alias))
+        automations.append(_remap_automation(ca, alias, skey_map))
     return {"sheets": sheets, "dicts": dicts, "groups": groups,
             "automations": automations}
 
@@ -339,7 +425,10 @@ def write_design(name, design, app_code=""):
     落盘后立即跑离线 check;校验失败也会写盘(便于前端改后重存),由调用方决定是否回滚。
     """
     pdir = E.project_dir(name)
-    d = clean_design(design)
+    # 线上已建的表:字段/子表列编码已固定,清洗时原样保留(改名 = 另起一列、老数据留在原处)
+    reg = E.load_registry(name) or {}
+    frozen = {k for k, v in reg.items() if isinstance(v, dict) and v.get("created")}
+    d = clean_design(design, frozen_keys=frozen)
     if not d["sheets"]:
         raise E.EngineError("设计里没有任何表单(sheets 为空)")
     sj = os.path.join(pdir, "sheets")

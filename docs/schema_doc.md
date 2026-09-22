@@ -62,20 +62,38 @@
 
 `key` **就是建出来的字段编码**(载荷里的 `DataField`/`Key`),表单 key、子表 key、子表列 key 同理。命名两条硬规则,`check`/`build` 报错拦下:
 
-1. **只能英文字母 + 数字,必须字母开头,不能有下划线**(连字符/中文/空格同样不行)。`plan_begin` ✗ → `planBegin` 或 `planbegin` ✓;`1ab` ✗;`a1b2` ✓。
+1. **只含英文字母 + 数字,必须字母开头,不得出现任何符号**(下划线/连字符/空格/点号/括号/斜杠/中文 都不行)。`plan_begin` ✗ → `planBegin` 或 `planbegin` ✓;`客户-档案` ✗ → `customerFile` ✓;`金额(元)` ✗ → `amount` ✓;`1ab` ✗;`a1b2` ✓。
    - 例外:**布局项**(分组标题/描述)的 key 不是字段编码(它的 `DataField` 是 GUID,短码只留在本地),随便起;**流水号**的编码恒为 `SeqNo`(key 可省),不受本条约束。
-2. **不能占用平台自带编码** —— 每张表单**天生就有**这些列,撞上会出问题:
+   - 含符号的编码由生成侧 `clean_design` **自动驼峰化**(不丢数据);**含路径分隔符 `/ \` 或 `..` 的 key 属危险键,直接剔除**。
+2. **不能占用保留字** —— 分两类,`check`/`build` 一并拦:
+
+**(a) 平台自带编码** —— 每张表单/子表**天生就有**这些列,撞上会出问题:
 
 ```
+# 主表 i_表单编码
 Name  SeqNo  CreatedTime  CreatedBy  ModifiedTime  ModifiedBy
 OwnerId  OwnerDeptId  Status  State  ObjectId  WorkflowInstanceId
+# 子表 i_子表控件编码
+ParentObjectId  ParentPropertyName  ParentIndex
+# 关联表单多选中间表
+ValueIndex  PropertyValue
 ```
+
+**(b) MySQL 保留关键字** —— 字段编码会成为数据库**列名**(`i_表单编码`),列名撞上它会让
+SQL 报表 / SQL 高级数据源里的语句失败。常见:`status` `order` `group` `key` `desc` `rank`
+`system` `values` `index` `range` `select` `from` `where` `char` `int` `float` `decimal`
+`date` `time` `if` `in` `is` `and` `or` `not` `null` `left` `right` `join` …(完整列表见
+`h3design/dsl.py` 的 `MYSQL_RESERVED`)。**换业务别名即可**:`status → billStatus`、
+`order → saleOrder`、`group → mgroup`。大小写不敏感(`Status`/`STATUS` 同样被拦)。
+
+> 生成侧的 `clean_design` 会自动把撞字的字段/表单 key 改名(加 `Field`/`Form` 后缀)并同步
+> 重映射引用;但**提示词仍要求直接产出合规编码**,避免依赖自动改名。
 
 - 申请人在 `layout` 里写 `"OwnerId"`、申请部门写 `"OwnerDeptId"`(配 `useOwner: true`),**不要**塞进 `controls`。
 - `SeqNo` 只归**流水号控件**;普通控件名叫 `SeqNo` 会被拦。
 - 其余几个由平台自动维护,定义里不出现。
 
-> **已建表的例外**:表单线上建过之后(`registry.json` 里 `created: true`),字段编码在平台上就固定了,改 key = 另起一列、老列数据留在原处 —— 所以规则 1 对这类表**放过**,但 `check` 会把不合规的 key 点名列出来(防止照着旧风格再加字段)。规则 2 任何时候都拦。
+> **已建表的例外**:表单线上建过之后(`registry.json` 里 `created: true`),字段编码在平台上就固定了,改 key = 另起一列、老列数据留在原处 —— 所以**规则 1、2 对这类表都放过**(`clean_design` 原样保留其编码,`check` 也不拦)。**未建表**的项目一律拦(`check`/`build` 报错),生成侧 `clean_design` 自动改名。
 
 ### 不用管的两件事
 

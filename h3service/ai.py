@@ -63,8 +63,12 @@ _SYS_DESIGN = """你是氚云低代码平台的表单设计器。根据方案与
  "groups":["基础资料","业务管理"]}}
 
 硬性规则(违反会导致建表失败):
-1) 字段 key:字母开头、只含字母数字、无下划线;禁止平台自带名
-   (Name/SeqNo/CreatedTime/CreatedBy/ModifiedTime/ModifiedBy/OwnerId/OwnerDeptId/Status/State/ObjectId/WorkflowInstanceId)。
+1) 字段 key:只含英文字母与数字、必须字母开头、不得出现任何符号(下划线/连字符/空格/点号/括号/
+   中文都不行);禁止平台自带编码
+   (ObjectId/Name/CreatedBy/OwnerId/OwnerDeptId/CreatedTime/ModifiedBy/ModifiedTime/
+   WorkflowInstanceId/Status/State/SeqNo/ParentObjectId/ParentPropertyName/ParentIndex),
+   也禁止 MySQL 保留关键字(status/order/group/key/desc/rank/system/values/index/range 等,
+   字段编码会成为数据库列名);换业务别名,如 status→billStatus。
 2) query 的 assoc = 目标表的 key;必须先建被引用表,不要自引用。
 3) dropdown/radio/checkbox_list 必须有 dict(引用 dicts)或 options(字面量)。
 4) member/department/query 若多选则 multi:true。
