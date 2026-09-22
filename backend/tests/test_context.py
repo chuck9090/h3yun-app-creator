@@ -331,26 +331,33 @@ def t_reference_guard():
     check("plan:有参考时保留需求原文", "我要做门店管理" in up)
     check("plan:无参考时不含守则", g not in plan_service._user_prompt("我要做门店管理", "", None))
 
-    dup = design_service._user_prompt("方案正文", "我要做门店管理", "旧系统字段")
-    check("design:有参考时含守则", g in dup and "需求资料与参考资料" in dup)
-    check("design:无参考时不含守则", g not in design_service._user_prompt("方案", "需求", ""))
+    dup = design_service._user_prompt("方案正文", "flowchart LR\n  A-->B", "旧系统字段")
+    check("design:有参考时含守则", g in dup)
+    check("design:含流程图输入(用于判断自动化)", "业务流程图" in dup and "A-->B" in dup)
+    check("design:无参考时不含守则",
+          g not in design_service._user_prompt("方案", "flowchart LR", ""))
 
-    fup = flowchart_service._user_prompt("方案", "我要做门店管理", "旧系统字段")
-    check("flowchart:有参考时含守则", g in fup and "需求资料与参考资料" in fup)
-    check("flowchart:无参考时不含守则",
-          g not in flowchart_service._user_prompt("方案", "需求", ""))
+    fup = flowchart_service._user_prompt("方案正文")
+    check("flowchart:提示只含方案(不看需求/参考)", "系统设计方案" in fup and "方案正文" in fup)
+    check("flowchart:不再携带需求/参考资料守则", g not in fup)
 
-    check("plan:system 含需求清单基准", "需求清单" in plan_service._SYSTEM)
-    check("design:system 含需求清单基准", "需求清单" in design_service._SYSTEM)
-    check("flowchart:system 含需求清单基准", "需求清单" in flowchart_service._SYSTEM)
+    check("plan:强调是流程图与 ER 的唯一依据", "唯一依据" in plan_service._SYSTEM)
+    check("plan:要求写全字段/规则/关系",
+          "全部字段" in plan_service._SYSTEM and "业务规则" in plan_service._SYSTEM
+          and "关系" in plan_service._SYSTEM)
+    check("plan:要求看板/报表单独成模块(便于排除)",
+          "看板" in plan_service._SYSTEM and "报表" in plan_service._SYSTEM)
 
-    check("plan:system 按需求清单模块分组且表单必做",
-          "功能模块" in plan_service._SYSTEM and "一个不漏" in plan_service._SYSTEM)
-    check("design:system 模块与清单一致且表单必做",
-          "功能模块" in design_service._SYSTEM and "一个不漏" in design_service._SYSTEM)
-    check("flowchart:system 以表单为节点 + subgraph 分组",
-          "节点 = 表单" in flowchart_service._SYSTEM
-          and "subgraph" in flowchart_service._SYSTEM)
+    check("design:system 依据方案+业务流程图",
+          "系统设计方案" in design_service._SYSTEM and "业务流程图" in design_service._SYSTEM)
+    check("design:system 排除看板/报表(不建表)",
+          "看板" in design_service._SYSTEM and "不建表" in design_service._SYSTEM)
+
+    check("flowchart:system 唯一依据是方案", "唯一依据" in flowchart_service._SYSTEM)
+    check("flowchart:system 排除看板/报表",
+          "看板" in flowchart_service._SYSTEM and "报表" in flowchart_service._SYSTEM)
+    check("flowchart:system 按模块 subgraph 分组",
+          "subgraph" in flowchart_service._SYSTEM and "模块" in flowchart_service._SYSTEM)
 
 
 # ---------------------------------------------------------------- 9. 需求清单:清单行 + 必做表单
@@ -433,7 +440,7 @@ def t_plan_format():
     tabs = flowchart_service._tables_from_plan(md)
     check("flowchart:从方案 H2 解析表单(无 key)",
           [t for _, t in tabs] == ["门店档案", "区域档案", "加盟合同"], str(tabs))
-    mmd = flowchart_service._heuristic_flow(md, "门店 区域 合同")
+    mmd = flowchart_service._heuristic_flow(md)
     check("flowchart:每个节点都带业务名标签",
           all(('["%s"]' % n) in mmd for n in ["门店档案", "区域档案", "加盟合同"]), mmd)
     check("flowchart:仍是合法 mermaid", mmd.startswith("flowchart"), mmd[:20])
@@ -454,6 +461,103 @@ def t_plan_format():
           str(flowchart_service._tables_from_plan(md_old)))
 
 
+# ---------------------------------------------------------------- 11. 看板/报表排除(不进流程图与 ER)
+def t_report_excluded():
+    check("report:关键词识别看板/报表",
+          ctx.is_report_entity("协同看板") and ctx.is_report_entity("库存分析")
+          and ctx.is_report_entity("销售报表") and ctx.is_report_entity("库存汇总统计")
+          and ctx.is_report_entity("经营总览") and ctx.is_report_entity("异常监控"))
+    check("report:业务表单不误判",
+          not ctx.is_report_entity("采购订单") and not ctx.is_report_entity("客户档案")
+          and not ctx.is_report_entity("出库细码单"))
+    # 弱信号只在**结尾**才算:避免误伤「质量分析单 / 工时统计表 / 设备监控台账」这类业务表
+    check("report:弱信号需结尾(不误伤业务表)",
+          not ctx.is_report_entity("质量分析单")
+          and not ctx.is_report_entity("工时统计表")
+          and not ctx.is_report_entity("设备监控台账"))
+
+    md = ("# 项目概述\nx\n"
+          "# 物料与库存\n## 物料主数据\n业务内容:\n1. 字段:编码、名称\n"
+          "## 三态库存视图\n业务内容:\n1. 展示在库/在途/在制\n"
+          "# 协同看板\n## 订单进度看板\n业务内容:\n1. 展示订单进度\n"
+          "# 决策分析中心\n## 库存分析\n业务内容:\n1. 分析库存周转\n")
+    mods = flowchart_service._plan_structure(md)
+    names = [n for n, _ in mods]
+    forms = [f for _, fs in mods for f in fs]
+    check("report:流程图排除看板/报表模块", "协同看板" not in names and "决策分析中心" not in names,
+          str(names))
+    check("report:流程图排除看板/报表表单",
+          "订单进度看板" not in forms and "库存分析" not in forms, str(forms))
+    check("report:业务模块与表单保留", names == ["物料与库存"] and "物料主数据" in forms, str(mods))
+
+    mods_all = flowchart_service._plan_structure(md, exclude_reports=False)
+    forms_all = [f for _, fs in mods_all for f in fs]
+    check("report:校验模式(不排除)可见全部",
+          "订单进度看板" in forms_all and "库存分析" in forms_all, str(forms_all))
+
+    # design 侧剔除看板/报表 + 只含它们的模块 + 指向它们的自动化
+    fake = {"sheets": [
+        {"key": "customer", "title": "客户档案", "group": "基础资料",
+         "controls": [{"type": "text", "key": "cname", "label": "客户名称"}]},
+        {"key": "board", "title": "订单进度看板", "group": "协同看板",
+         "controls": [{"type": "text", "key": "b", "label": "x"}]}],
+        "dicts": {}, "groups": ["基础资料", "协同看板"],
+        "automations": [{"key": "a1", "form": "customer", "trigger": "生效或更新",
+                         "actions": [{"do": "更新", "target": "customer"}]},
+                        {"key": "a2", "form": "board", "trigger": "生效或更新",
+                         "actions": [{"do": "更新", "target": "customer"}]}]}
+    out = design_service._strip_reports(fake)
+    keys = [s["key"] for s in out["sheets"]]
+    check("report:ER 剔除看板/报表表", keys == ["customer"], str(keys))
+    check("report:ER 剔除只含看板的模块", out["groups"] == ["基础资料"], str(out["groups"]))
+    check("report:ER 剔除指向被剔除表的自动化",
+          [a["key"] for a in out["automations"]] == ["a1"], str(out["automations"]))
+
+    # 自动化只按**表 key** 剔除:未引用被剔除表的一律保留(不误删)
+    fake2 = {"sheets": [
+        {"key": "customer", "title": "客户档案", "group": "基础资料",
+         "controls": [{"type": "text", "key": "cname", "label": "客户名称"}]}],
+        "dicts": {}, "groups": ["基础资料"],
+        "automations": [
+            {"key": "keep1", "form": "customer", "trigger": "生效或更新",
+             "actions": [{"do": "更新", "target": "customer"}]},
+            # match.ref 是**字段**名(源侧),即便与某个被剔除表 key 同名,也不该误删
+            {"key": "keep2", "form": "customer", "trigger": "生效或更新",
+             "actions": [{"do": "更新", "target": "customer",
+                          "match": [{"field": "cname", "ref": "board"}]}]}]}
+    o2 = design_service._strip_reports(fake2)
+    check("report:未引用被剔除表的自动化不被误删",
+          [a["key"] for a in o2["automations"]] == ["keep1", "keep2"],
+          str([a["key"] for a in o2["automations"]]))
+
+
+def t_flow_stats_and_module_scope():
+    # 节点统计必须覆盖**链式一行多节点**,否则正常图会被误判"过密"而回退
+    chain = "flowchart LR\n  " + " --> ".join("N%d[X%d]" % (i, i) for i in range(1, 21))
+    n, e = flowchart_service.flow_stats(chain)
+    check("flowstats:链式 20 节点统计正确", n == 20 and e == 19, "nodes=%d edges=%d" % (n, e))
+    check("flowstats:链式不再误判过密", not (e > max(12, int(n * 1.6))),
+          "edges=%d n*1.6=%d" % (e, int(n * 1.6)))
+    per_line = "flowchart LR\n" + "\n".join("  N%d[X%d]" % (i, i) for i in range(1, 21))
+    n2, e2 = flowchart_service.flow_stats(per_line)
+    check("flowstats:逐行声明统计正确", n2 == 20 and e2 == 0, "nodes=%d edges=%d" % (n2, e2))
+    sub = ('flowchart LR\n  subgraph M1["销售"]\n    direction TB\n'
+           '    A[客户] --> B[报价单]\n  end')
+    n3, e3 = flowchart_service.flow_stats(sub)
+    check("flowstats:subgraph 不计为节点", n3 == 2 and e3 == 1, "nodes=%d edges=%d" % (n3, e3))
+
+    # 模块名含报表词、但模块内有业务表 → 模块与业务表都要保留(只剔报表表单)
+    md = ("# 项目概述\nx\n# 统计管理\n"
+          "## 采购订单\n业务内容:\n1. 字段:编号\n"
+          "## 销售成本统计\n业务内容:\n1. 展示成本\n")
+    mods = flowchart_service._plan_structure(md)
+    names = [n for n, _ in mods]
+    forms = [f for _, fs in mods for f in fs]
+    check("report:模块名含报表词不整块丢弃", names == ["统计管理"], str(names))
+    check("report:模块内业务表保留、报表表单剔除",
+          forms == ["采购订单"], str(forms))
+
+
 # ---------------------------------------------------------------- main
 def main():
     print("=" * 70)
@@ -472,6 +576,8 @@ def main():
         t_required_forms()
         t_build_reference_forms()
         t_plan_format()
+        t_report_excluded()
+        t_flow_stats_and_module_scope()
     finally:
         _restore_cfg()
         ctx.get_or_extract = _ORIG_GOE

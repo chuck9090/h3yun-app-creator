@@ -131,6 +131,66 @@ body {
   color: var(--text-1);
   overflow: hidden;
   text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+
+/* 品牌行右侧的「隐藏侧边栏」按钮 */
+.app-sider-toggle {
+  flex: none;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-3);
+  font-size: 14px;
+  cursor: pointer;
+  transition:
+    background var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+
+.app-sider-toggle:hover {
+  color: var(--primary);
+  background: var(--primary-softer);
+}
+
+/* 头部左侧:折叠时的「显示侧边栏」按钮 + 页面标题 */
+.app-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.app-header-toggle {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: 15px;
+  cursor: pointer;
+  transition:
+    background var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+
+.app-header-toggle:hover {
+  color: var(--primary);
+  background: var(--surface-2);
 }
 
 .app-sider-menu {
@@ -148,7 +208,8 @@ body {
 }
 
 .ant-layout-sider-collapsed .app-brand-text,
-.ant-layout-sider-collapsed .app-sider-foot {
+.ant-layout-sider-collapsed .app-sider-foot,
+.ant-layout-sider-collapsed .app-sider-toggle {
   display: none;
 }
 
@@ -568,6 +629,26 @@ body {
   margin-left: auto;
 }
 
+/* 吸顶区:项目卡片 + 阶段步骤条(滚动长内容时保持可见) */
+.workbench-sticky {
+  position: sticky;
+  top: var(--header-h);
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding-bottom: 4px;
+  /* 不透明背景:内容滚过其下方时不透字 */
+  background: var(--bg);
+}
+
+/* 在吸顶容器内,间距由 gap 统一控制 */
+.workbench-sticky .workbench-hero,
+.workbench-sticky .stage-rail {
+  margin-bottom: 0;
+}
+
 /* 阶段轨道 */
 .stage-rail {
   border: 1px solid var(--border);
@@ -651,6 +732,40 @@ body {
   box-shadow: var(--shadow-sm);
 }
 
+/* 回到顶部:位于「生成进度」悬浮图标之上,避免重叠 */
+.back-to-top {
+  position: fixed;
+  right: 26px;
+  bottom: 128px;
+  z-index: 900;
+  width: 46px;
+  height: 46px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  color: var(--text-2);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  box-shadow: var(--shadow-md);
+  cursor: pointer;
+  transition:
+    background var(--dur) var(--ease),
+    color var(--dur) var(--ease),
+    transform var(--dur) var(--ease);
+}
+
+.back-to-top:hover {
+  color: var(--primary);
+  background: var(--surface-2);
+  transform: translateY(-2px);
+}
+
+.back-to-top:active {
+  transform: translateY(0);
+}
+
 /* 侧栏内的进度明细 */
 .job-drawer .ant-drawer-body {
   padding: 12px;
@@ -661,12 +776,189 @@ body {
   border-bottom: 1px solid var(--border);
 }
 
+/* 明细滚动容器:顶部留白,避免第一行/圆点上沿被容器边界裁掉半截 */
+.job-list {
+  max-height: 280px;
+  overflow: auto;
+  margin-top: 8px;
+  padding-top: 6px;
+  padding-bottom: 4px;
+  scroll-padding-top: 6px;
+}
+
+/* 明细行:文字可换行不被挤压,右侧「百分比 + 时间」固定不被遮 */
+.job-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+}
+
+.job-line-text {
+  flex: 1 1 auto;
+  min-width: 0; /* 关键:允许 flex 子项收缩,否则长文本会溢出/挤掉右侧 */
+  line-height: 1.5;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.job-line-meta {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  white-space: nowrap;
+  padding-top: 2px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.job-line-pct {
+  min-width: 34px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.job-line-ts {
+  font-variant-numeric: tabular-nums;
+}
+
+/* 当前步骤:醒目且可断行 */
+.job-current {
+  margin: 6px 0 8px;
+  line-height: 1.5;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+/* 收紧明细时间轴的行距(否则每项之间空隙过大) */
+.job-drawer .ant-timeline {
+  margin-top: 2px;
+}
+
+.job-drawer .ant-timeline .ant-timeline-item {
+  padding-bottom: 12px;
+}
+
+.job-drawer .ant-timeline .ant-timeline-item:last-child {
+  padding-bottom: 0;
+}
+
 /* ------------------------------------------------------ Markdown 正文 */
 
 .md-body {
   line-height: 1.6;
   word-break: break-word;
   color: var(--text-1);
+}
+
+/* ------------------------------------------------------ 方案目录(左) + 正文(右) */
+
+.plan-layout {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+/* 左侧目录:吸顶、独立滚动;窄屏隐藏 */
+.plan-toc {
+  position: sticky;
+  /* 顶栏 + 吸顶区(项目卡片+步骤条)之下 */
+  top: calc(var(--header-h) + var(--workbench-sticky-h, 0px) + 10px);
+  flex: 0 0 208px;
+  width: 208px;
+  max-height: calc(
+    100vh - var(--header-h) - var(--workbench-sticky-h, 0px) - 32px
+  );
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
+.plan-toc-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-3);
+  padding: 2px 8px 8px;
+  letter-spacing: 0.04em;
+}
+
+.plan-toc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.plan-toc-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 5px 8px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--text-2);
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition:
+    background var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+
+.plan-toc-item.lv1 {
+  font-weight: 600;
+  color: var(--text-1);
+  margin-top: 6px;
+}
+
+.plan-toc-item.lv1:first-child {
+  margin-top: 0;
+}
+
+.plan-toc-item.lv2 {
+  padding-left: 18px;
+}
+
+.plan-toc-item.lv3 {
+  padding-left: 30px;
+  font-size: 12.5px;
+}
+
+.plan-toc-item:hover {
+  background: var(--primary-softer);
+  color: var(--primary);
+}
+
+.plan-toc-item.is-active {
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.plan-body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* 跳转后标题不贴住顶栏(与 PlanStep 的滚动偏置一致) */
+.plan-body h1,
+.plan-body h2,
+.plan-body h3 {
+  scroll-margin-top: calc(
+    var(--header-h) + var(--workbench-sticky-h, 0px) + 14px
+  );
+}
+
+@media (max-width: 1100px) {
+  .plan-toc {
+    display: none;
+  }
 }
 
 .md-body h1,
@@ -736,11 +1028,68 @@ body {
   overflow: auto;
   max-height: 70vh;
   padding: 4px;
+  /* 拖动平移:grab 光标;禁用文本选中与浏览器手势,避免拖动时选中文字/触发滚动链 */
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+  overscroll-behavior: contain;
+}
+
+.flowchart-svg.is-panning {
+  cursor: grabbing;
 }
 
 .flowchart-svg svg {
   max-width: none;
   height: auto;
+}
+
+/* 缩放工具条 */
+.flowchart-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.flowchart-mode {
+  flex: 0 0 auto;
+}
+
+/* 拖动提示(窄屏隐藏) */
+.flowchart-hint {
+  flex: 0 0 auto;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+@media (max-width: 1100px) {
+  .flowchart-hint {
+    display: none;
+  }
+}
+
+.flowchart-zoom-pct {
+  display: inline-block;
+  min-width: 46px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+  line-height: 24px;
+}
+
+/* 全屏:内容区占满剩余高度,svg 在其中滚动 */
+.flowchart-fullscreen {
+  height: calc(100vh - 180px);
+  overflow: hidden;
+}
+
+.flowchart-fullscreen .flowchart-svg {
+  max-height: none;
+  height: 100%;
 }
 
 .flowchart-source {

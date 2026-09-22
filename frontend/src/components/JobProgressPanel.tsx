@@ -29,6 +29,13 @@ function parseTime(s: string): number {
   return Number.isNaN(t) ? 0 : t
 }
 
+/** 进度明细里只显示时分秒(完整时间放 title);同一次任务都在同一天,日期冗余且占宽。 */
+function shortTime(s: string): string {
+  const t = (s || '').trim()
+  const m = t.match(/\d{4}-\d{2}-\d{2}\s+(\d{2}:\d{2}:\d{2})/)
+  return m ? m[1] : t
+}
+
 function elapsed(job: Job): string {
   const start = parseTime(job.createdAt)
   if (!start) return ''
@@ -63,16 +70,16 @@ export default function JobProgressPanel({
     key: i,
     color: LEVEL_COLOR[p.level] || 'gray',
     children: (
-      <div style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}>
-        <span style={{ flex: 1 }}>{p.text}</span>
-        {typeof p.pct === 'number' ? (
-          <Typography.Text type="secondary" style={{ fontSize: 12, flex: 'none' }}>
-            {p.pct}%
-          </Typography.Text>
-        ) : null}
-        <Typography.Text type="secondary" style={{ fontSize: 12, flex: 'none' }}>
-          {p.ts}
-        </Typography.Text>
+      <div className="job-line">
+        <span className="job-line-text">{p.text}</span>
+        <span className="job-line-meta">
+          {typeof p.pct === 'number' ? (
+            <span className="job-line-pct">{p.pct}%</span>
+          ) : null}
+          <span className="job-line-ts" title={p.ts}>
+            {shortTime(p.ts)}
+          </span>
+        </span>
       </div>
     ),
   }))
@@ -98,7 +105,7 @@ export default function JobProgressPanel({
         status={job.status === 'failed' ? 'exception' : running ? 'active' : 'success'}
       />
       {running && last ? (
-        <div style={{ marginTop: 4, marginBottom: 4 }}>
+        <div className="job-current">
           <Typography.Text strong>{last.text}</Typography.Text>
         </div>
       ) : null}
@@ -112,7 +119,7 @@ export default function JobProgressPanel({
         />
       ) : null}
       {items.length ? (
-        <div ref={listRef} style={{ maxHeight: 280, overflow: 'auto', marginTop: 8 }}>
+        <div ref={listRef} className="job-list">
           <Timeline items={items} />
         </div>
       ) : null}

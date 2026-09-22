@@ -13,7 +13,7 @@
 """
 import json
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
 from .. import engine_bridge as EB
 from .. import storage
@@ -185,6 +185,22 @@ def generate_plan(id: int, body: S.GenerateIn = None, user=Depends(deps.require_
                                          progress=progress, provider=provider)
         progress("保存方案(provider=%s)" % res.get("provider"), pct=95)
         storage.set_plan(slug, res["markdown"])
+        # 方案是后续「业务流程图 / ER」的**唯一依据** → 校验它是否完整覆盖需求清单的表单
+        try:
+            from ..services import flowchart as fc
+            planned = [f for _, fs in fc._plan_structure(res["markdown"], exclude_reports=False)
+                       for f in fs]
+            report = [f for f in forms if ctx.is_report_entity(f)]
+            if report:
+                progress("说明:需求清单中的 %d 个看板/报表已按规则排除(不建表、不进流程图与 ER)"
+                         % len(report), pct=96)
+            missing = ctx.missing_forms(forms, planned)
+            if missing:
+                progress("提示:需求清单中 %d 个表单未出现在方案里,将影响流程图与 ER"
+                         "(可重新生成方案或手工补全):%s"
+                         % (len(missing), "、".join(missing[:10])), pct=96, level="warning")
+        except Exception:
+            pass
         db.update_project(pid, status="planned")
         db.add_event(pid, "plan", "生成系统设计方案(provider=%s)" % res.get("provider"))
         return {"markdown": res["markdown"], "provider": res.get("provider", "heuristic"),
@@ -217,44 +233,32 @@ def get_flowchart(id: int, user=Depends(deps.require_user)):
 def generate_flowchart(id: int, body: S.GenerateIn = None, user=Depends(deps.require_user)):
     p = deps.get_project(id, user, write=True)
     slug, pid = p["slug"], p["id"]
+    # 流程图唯一依据 = 方案:方案为空则无法生成
+    if not (storage.get_plan(slug) or "").strip():
+        raise HTTPException(400, "尚未生成系统设计方案,请先完成「方案」阶段")
 
     def runner(progress):
-        from ..services import context as ctx
-        progress("读取系统设计方案、需求与参考资料清单", pct=3)
-        requirement = storage.requirement_text(slug)
-        docs, library_text = _reference_material(p)
+        # 业务流程图的**唯一依据 = 系统设计方案**(方案已含完整字段/业务逻辑/关系);
+        # 不再读取原始需求与参考资料,保证与方案口径一致。
+        progress("读取系统设计方案", pct=10)
+        plan_md = storage.get_plan(slug)
         provider = llm_service.get_provider()
-        progress("结构化抽取参考资料(共 %d 个文件,已抽取过的会直接复用缓存)" % len(docs), pct=5)
-        reference = ctx.build_reference(docs, provider, progress=progress, pct_range=(6, 55))
-        progress("组装上下文:模式=%s,约 %d token(预算 %d)" % (
-            reference["mode"], reference["totalTokens"], ctx.C.CTX_TOKEN_BUDGET), pct=58)
-        ref_text = reference["text"]
-        if reference["mode"].startswith(ctx.MODE_CATALOG):
-            resolved, used = ctx.resolve_catalog(provider, reference, requirement, progress)
-            ref_text = resolved
-            progress("目录模式:已按需纳入 %d 份资料" % len(used), pct=70)
-        library_text, ref_text, fit_note = ctx.fit_reference(library_text, ref_text)
-        blocks = [b for b in (ref_text, library_text) if b and b.strip()]
-        reference_text = "\n\n".join(blocks)
-        forms = reference.get("requiredForms") or []
-        checklist = ctx.forms_checklist(forms)
-        if checklist:
-            reference_text = "%s\n\n%s" % (checklist, reference_text)
-            progress("需求清单:识别出 %d 个必做表单,已作为硬约束" % len(forms), pct=71)
-        if fit_note:
-            progress("提示:%s" % fit_note, pct=70, level="warning")
-        for note in reference["notes"][:6]:
-            progress("提示:%s" % note, pct=70, level="warning")
         progress("调用大模型生成业务流程图" if getattr(provider, "available", False)
-                 else "未配置大模型,使用启发式生成流程图", pct=75)
-        res = flowchart_service.generate_flowchart(storage.get_plan(slug), requirement,
-                                                   reference_text)
-        progress("流程图生成完成(provider=%s),正在保存" % res.get("provider"), pct=90)
+                 else "未配置大模型,使用启发式生成流程图", pct=55)
+        res = flowchart_service.generate_flowchart(plan_md)
+        stats = "节点 %d / 边 %d" % (res.get("nodes", 0), res.get("edges", 0))
+        if res.get("dense"):
+            ds = res.get("denseStats") or {}
+            progress("提示:模型产出的流程图过密(节点 %d/边 %d),已自动回退为「分模块」骨架;"
+                     "可重新生成以获取更聚焦的流程"
+                     % (ds.get("nodes", 0), ds.get("edges", 0)), pct=88, level="warning")
+        progress("流程图生成完成(provider=%s,%s),正在保存" % (res.get("provider"), stats), pct=90)
         storage.set_flowchart(slug, res["mermaid"])
         db.update_project(pid, status="flowcharted")
         db.add_event(pid, "flowchart", "生成业务流程图(provider=%s)" % res.get("provider"))
         return {"mermaid": res["mermaid"], "provider": res.get("provider", "heuristic"),
-                "_detail": "provider=%s" % res.get("provider")}
+                "nodes": res.get("nodes", 0), "edges": res.get("edges", 0),
+                "_detail": "provider=%s, %s" % (res.get("provider"), stats)}
 
     job, created = jobs_service.submit(pid, user["id"], "flowchart", runner)
     return _ok({"job": job, "created": created})
@@ -280,38 +284,20 @@ def generate_design(id: int, body: S.GenerateIn = None, user=Depends(deps.requir
     p = deps.get_project(id, user, write=True)
     slug, pid = p["slug"], p["id"]
     app_code = p.get("app_code", "")
+    if not (storage.get_plan(slug) or "").strip():
+        raise HTTPException(400, "尚未生成系统设计方案,请先完成「方案」阶段")
 
     def runner(progress):
-        from ..services import context as ctx
-        progress("读取方案、需求与参考资料清单", pct=3)
-        docs, library_text = _reference_material(p)
+        # ER 的**依据 = 方案(字段/规则) + 业务流程图(表单间流转 → 自动化)**;
+        # 看板/报表已在 design 侧排除(不建表、不进应用)。
+        progress("读取系统设计方案与业务流程图", pct=15)
+        plan_md = storage.get_plan(slug)
+        mmd = storage.get_flowchart(slug)
+        if not (mmd or "").strip():
+            progress("提示:尚未生成业务流程图,自动化判断将仅依据方案", pct=20, level="warning")
         provider = llm_service.get_provider()
-        progress("结构化抽取参考资料(共 %d 个文件)" % len(docs), pct=5)
-        reference = ctx.build_reference(docs, provider, progress=progress, pct_range=(6, 55))
-        progress("组装上下文:模式=%s,约 %d token" % (reference["mode"], reference["totalTokens"]),
-                 pct=58)
-        ref_text = reference["text"]
-        if reference["mode"].startswith(ctx.MODE_CATALOG):
-            resolved, used = ctx.resolve_catalog(provider, reference, storage.requirement_text(slug),
-                                                 progress)
-            ref_text = resolved
-            progress("目录模式:已按需纳入 %d 份资料" % len(used), pct=70)
-        library_text, ref_text, fit_note = ctx.fit_reference(library_text, ref_text)
-        blocks = [b for b in (ref_text, library_text) if b and b.strip()]
-        reference_text = "\n\n".join(blocks)
-        forms = reference.get("requiredForms") or []
-        checklist = ctx.forms_checklist(forms)
-        if checklist:
-            reference_text = "%s\n\n%s" % (checklist, reference_text)
-            progress("需求清单:识别出 %d 个必做表单,已作为硬约束" % len(forms), pct=71)
-        if fit_note:
-            progress("提示:%s" % fit_note, pct=70, level="warning")
-        for note in reference["notes"][:6]:
-            progress("提示:%s" % note, pct=70, level="warning")
-
-        res = design_service.generate_design(storage.get_plan(slug),
-                                             storage.requirement_text(slug),
-                                             reference_text, progress=progress, provider=provider)
+        progress("调用大模型生成 ER 结构…", pct=60)
+        res = design_service.generate_design(plan_md, mmd, progress=progress, provider=provider)
         design = {"sheets": res.get("sheets") or [],
                   "dicts": res.get("dicts") or {},
                   "groups": res.get("groups") or [],
@@ -319,20 +305,14 @@ def generate_design(id: int, body: S.GenerateIn = None, user=Depends(deps.requir
         progress("落盘表单/自动化定义并做离线校验(%d 张表)" % len(design["sheets"]), pct=94)
         design, check, error = _sync(slug, app_code, design)
         storage.set_design(slug, design)
-        # 需求清单必做表单的覆盖度校验:缺失项以告警暴露(不阻断,便于人工补)
-        titles = [s.get("title") or s.get("key") for s in design["sheets"]]
-        missing = ctx.missing_forms(forms, titles)
-        if missing:
-            progress("提示:需求清单中的 %d 个表单未出现在 ER 结构中:%s"
-                     % (len(missing), "、".join(missing[:10])), pct=95, level="warning")
         db.update_project(pid, status="designed")
         db.add_event(pid, "design",
                      "生成 ER 结构(provider=%s, %d 表/%d 自动化)"
                      % (res.get("provider", "heuristic"), len(design["sheets"]),
                         len(design.get("automations") or [])))
         payload = _design_payload(design, res.get("provider", "heuristic"), check, error)
-        payload["_detail"] = "provider=%s, %d 表, 参考模式=%s" % (
-            res.get("provider", "heuristic"), len(design["sheets"]), reference["mode"])
+        payload["_detail"] = "provider=%s, %d 表(方案+流程图)" % (
+            res.get("provider", "heuristic"), len(design["sheets"]))
         return payload
 
     job, created = jobs_service.submit(pid, user["id"], "design", runner)

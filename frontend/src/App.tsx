@@ -11,6 +11,8 @@ import {
   KeyOutlined,
   ThunderboltFilled,
   UploadOutlined,
+  MenuFoldOutlined,
+  MenuUnfoldOutlined,
 } from '@ant-design/icons'
 import { errMsg, get, post, patch, avatarUrl, setUnauthorizedHandler, User } from './api/client'
 import Login from './pages/Login'
@@ -67,6 +69,41 @@ function MainLayout({ me, setMe }: { me: User; setMe: (u: User | null) => void }
   const [profileLoading, setProfileLoading] = useState(false)
   const [profileForm] = Form.useForm()
   const [form] = Form.useForm()
+  // 左侧导航:用户可主动显示/隐藏,偏好持久化到 localStorage。
+  // 注意:偏好(siderPref)与「窄屏自动折叠」是两回事——窄屏强制折叠,宽屏恢复用户偏好,
+  // 只有用户主动点击才写入偏好(否则窗口一缩小就被永久记住)。
+  const [siderPref, setSiderPref] = useState(() => {
+    try {
+      return localStorage.getItem('h3ac.siderCollapsed') === '1'
+    } catch {
+      return false // 隐私模式等 localStorage 不可用
+    }
+  })
+  const [siderCollapsed, setSiderCollapsed] = useState(siderPref)
+  const [narrow, setNarrow] = useState(false)
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 991.98px)')
+    const apply = () => {
+      setNarrow(mq.matches)
+      setSiderCollapsed(mq.matches ? true : siderPref)
+    }
+    apply()
+    mq.addEventListener('change', apply)
+    return () => mq.removeEventListener('change', apply)
+  }, [siderPref])
+  const toggleSider = () => {
+    if (narrow) return // 窄屏保持折叠,点展开按钮无效(避免与响应式打架)
+    setSiderPref((v) => {
+      const next = !v
+      try {
+        localStorage.setItem('h3ac.siderCollapsed', next ? '1' : '0')
+      } catch {
+        /* 忽略:隐私模式下 localStorage 可能不可用 */
+      }
+      setSiderCollapsed(next)
+      return next
+    })
+  }
 
   const isAdmin = me.role === 'admin'
 
@@ -178,19 +215,30 @@ function MainLayout({ me, setMe }: { me: User; setMe: (u: User | null) => void }
         className="app-sider"
         theme={menuTheme}
         width={210}
-        breakpoint="lg"
         collapsedWidth={64}
+        collapsed={siderCollapsed}
+        trigger={null}
       >
         <div className="app-brand">
           <span className="app-brand-mark">
             <ThunderboltFilled />
           </span>
           <span className="app-brand-text">氚云应用生成平台</span>
+          <button
+            type="button"
+            className="app-sider-toggle"
+            onClick={toggleSider}
+            title="隐藏侧边栏"
+            aria-label="隐藏侧边栏"
+          >
+            <MenuFoldOutlined />
+          </button>
         </div>
         <Menu
           className="app-sider-menu"
           theme={menuTheme}
           mode="inline"
+          inlineCollapsed={siderCollapsed}
           selectedKeys={[selectedKey]}
           items={menuItems}
           onClick={({ key }) => nav('/' + key)}
@@ -200,7 +248,20 @@ function MainLayout({ me, setMe }: { me: User; setMe: (u: User | null) => void }
 
       <Layout className="app-main">
         <Layout.Header className="app-header">
-          <div className="app-header-title">{pageTitle}</div>
+          <div className="app-header-left">
+            {siderCollapsed && !narrow ? (
+              <button
+                type="button"
+                className="app-header-toggle"
+                onClick={toggleSider}
+                title="显示侧边栏"
+                aria-label="显示侧边栏"
+              >
+                <MenuUnfoldOutlined />
+              </button>
+            ) : null}
+            <div className="app-header-title">{pageTitle}</div>
+          </div>
           <div className="app-header-right">
             <ThemeToggle />
             <Dropdown menu={userMenu} placement="bottomRight">

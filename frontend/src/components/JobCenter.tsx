@@ -134,7 +134,7 @@ export function JobCenter() {
       <Drawer
         className="job-drawer"
         placement="right"
-        width={430}
+        width={460}
         open={open}
         onClose={() => setOpen(false)}
         mask={false}

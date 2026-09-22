@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
@@ -33,6 +33,7 @@ import DesignStep from '../components/DesignStep'
 import DeployStep from '../components/DeployStep'
 import ProjectSettingsModal from '../components/ProjectSettingsModal'
 import MembersModal from '../components/MembersModal'
+import BackToTop from '../components/BackToTop'
 import { JobCenter, JobsProvider, jobPct, useJobs } from '../components/JobCenter'
 
 const STEP_KEYS = ['requirement', 'plan', 'flowchart', 'design', 'deploy']
@@ -76,6 +77,7 @@ export default function ProjectWorkbench({ me }: { me: User }) {
     <JobsProvider key={id}>
       <WorkbenchInner me={me} />
       <JobCenter />
+      <BackToTop />
     </JobsProvider>
   )
 }
@@ -90,6 +92,32 @@ function WorkbenchInner({ me }: { me: User }) {
   const [active, setActive] = useState('requirement')
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [membersOpen, setMembersOpen] = useState(false)
+  const stickyRef = useRef<HTMLDivElement | null>(null)
+
+  // 把吸顶区(项目卡片+步骤条)的高度写入 CSS 变量,供方案目录 / 锚点偏移动态跟随
+  useEffect(() => {
+    const el = stickyRef.current
+    if (!el) return
+    const apply = () => {
+      document.documentElement.style.setProperty(
+        '--workbench-sticky-h',
+        `${el.offsetHeight}px`,
+      )
+    }
+    apply()
+    let ro: ResizeObserver | null = null
+    if (typeof ResizeObserver !== 'undefined') {
+      ro = new ResizeObserver(apply)
+      ro.observe(el)
+    } else {
+      window.addEventListener('resize', apply)
+    }
+    return () => {
+      if (ro) ro.disconnect()
+      else window.removeEventListener('resize', apply)
+      document.documentElement.style.removeProperty('--workbench-sticky-h')
+    }
+  }, [project])
 
   async function load() {
     setLoading(true)
@@ -245,15 +273,17 @@ function WorkbenchInner({ me }: { me: User }) {
 
   return (
     <div>
-      <Card className="workbench-hero" style={{ marginBottom: 12 }}>
-        <div className="hero-main">
-          <Button className="hero-back" icon={<ArrowLeftOutlined />} onClick={() => nav('/projects')}>
-            返回
-          </Button>
+      {/* 项目卡片 + 阶段步骤条:滚动方案等长内容时保持吸顶可见 */}
+      <div className="workbench-sticky" ref={stickyRef}>
+        <Card className="workbench-hero">
+          <div className="hero-main">
+            <Button className="hero-back" icon={<ArrowLeftOutlined />} onClick={() => nav('/projects')}>
+              返回
+            </Button>
 
-          <span className="hero-mark">
-            <DeploymentUnitOutlined />
-          </span>
+            <span className="hero-mark">
+              <DeploymentUnitOutlined />
+            </span>
 
           <div className="hero-text">
             <div className="hero-title-row">
@@ -292,21 +322,22 @@ function WorkbenchInner({ me }: { me: User }) {
             <Button size="small" icon={<ReloadOutlined />} onClick={load}>
               刷新
             </Button>
+            </div>
           </div>
-        </div>
-      </Card>
+        </Card>
 
-      <div className="stage-rail">
-        <Steps
-          size="small"
-          current={Math.max(0, STEP_KEYS.indexOf(active))}
-          onChange={(i) => goStage(STEP_KEYS[i])}
-          items={STEP_KEYS.map((key) => ({
-            title: stageText(key),
-            icon: STEP_ICONS[key],
-            disabled: !!gates[key],
-          }))}
-        />
+        <div className="stage-rail">
+          <Steps
+            size="small"
+            current={Math.max(0, STEP_KEYS.indexOf(active))}
+            onChange={(i) => goStage(STEP_KEYS[i])}
+            items={STEP_KEYS.map((key) => ({
+              title: stageText(key),
+              icon: STEP_ICONS[key],
+              disabled: !!gates[key],
+            }))}
+          />
+        </div>
       </div>
 
       <Tabs

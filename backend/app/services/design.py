@@ -1,24 +1,30 @@
 # -*- coding: utf-8 -*-
 """ER 结构生成({sheets,dicts,groups,automations})。
 
-  generate_design(plan_markdown, requirement_text="", documents_text="")
+  generate_design(plan_markdown, flowchart_mmd="", reference_text="")
       -> {sheets, dicts, groups, automations, provider}
 
-有 LLM:提示模型输出严格 JSON(表/字段/控件类型/关联/枚举/自动化),内嵌 docs/schema_doc.md 的
-控件类型表与 key 命名硬规则;**参考资料 = 用户上传的文档 + 已生成方案 + 需求**(无内置样本)。
+**依据 = 《系统设计方案》 + 《业务流程图》**:方案给出每个表单的完整字段与业务规则,
+流程图给出表单之间的**流转关系**(据此生成自动化/触发器);两者口径一致(流程图本身也源于方案)。
+**看板/报表类不建表**(非业务实体,由氚云端 SQL 报表另配)。
+有 LLM:提示模型输出严格 JSON(表/字段/控件类型/关联/枚举/自动化);
 无 LLM / LLM 失败:回退 h3service.ai.HeuristicProvider.design()(其语料来自用户已建项目)。
 **无论哪条路径,产出都必须经 h3service.design.clean_design 清洗(剔幻觉键/非法类型/规范化 key)。**
 """
 from . import llm
-from .context import REFERENCE_GUARD
+from .context import REFERENCE_GUARD, is_report_entity
 
-_SYSTEM = """你是氚云低代码平台的表单设计器。根据《系统设计方案》与原始需求,输出每张表的完整字段结构
-**以及表单之间的自动化(触发器)**。
+_SYSTEM = """你是氚云低代码平台的表单设计器。请依据**两份材料**输出每张业务表的完整字段结构
+**以及表单之间的自动化(触发器)**:
+  - 《系统设计方案》:H1=模块、H2=**业务表单**,表单下「业务内容」逐项给出该表的**字段(中文名)、子表/明细、业务规则**;
+  - 《业务流程图》:给出表单之间的**业务流转关系**(A 完成后生成/推进到 B)——据此判断要配哪些**自动化**。
+两者口径一致(流程图也是从方案生成的);字段的**英文编码(key)由你生成**,须遵守下方 key 命名硬规则。
 
-《系统设计方案》的格式:标题1=模块、标题2=**表单**(方案里的每个「表单」都要建成一张表);
-表单下的「业务内容」逐项列出该表单的**业务字段(中文名)、子表/明细、业务规则与流程触发** ——
-你的任务就是把这些落实为字段/控件/子表/自动化。字段的**英文编码(key)由你生成**,
-须遵守下方 key 命名硬规则(方案里只给中文业务名)。
+【范围(重要)】
+- 只建**业务表**(方案里发生在业务流转链上的单据/档案);
+- **看板 / 报表 / 统计 / 分析 / 总览 / 监控 类一律不建表** —— 它们是对数据的展示,
+  由氚云端 SQL 报表/高级数据源另配,不属于本应用的表单(方案中若出现这些模块/表单,直接跳过);
+- 只设计与方案+流程图相关的内容,**不得引入方案之外的表、字段或自动化**。
 只输出严格 JSON(不要 markdown 代码块、不要解释),结构:
 {"sheets":[{"key":"customer","title":"客户表","nameSchema":"{cname}","useOwner":false,
   "group":"基础资料","layout":"auto4",
@@ -85,20 +91,21 @@ _SYSTEM = """你是氚云低代码平台的表单设计器。根据《系统设�
 - subtable(columns, fixed)
 
 请遵循设计 SOP:
-1. `groups` 的**名称与顺序必须与需求清单的「功能模块」一致**(见资料中的「需求清单」/【需求清单·必须设计的表单】),
-   每个表的 `group` 取其所属模块;不得自创模块名或顺序;
-2. **需求清单中列出的每一个表单都必须设计出来(一个不漏)**;命中知识库同类系统的表/字段语义码优先复用;
+1. `groups` 的名称与顺序**与方案的模块(H1)一致**,每个表的 `group` 取其所属模块;不得自创模块名;
+   **看板/报表类模块不出现在 groups 里**(已整体排除);
+2. **方案里列出的每一个业务表单都必须设计出来(一个不漏)**;命中知识库同类系统的表/字段语义码优先复用;
 3. 主动补齐常规的状态/日期/负责人/备注/附件/明细子表/金额等字段;
-4. 只设计与《系统设计方案》和本项目需求(「需求清单」为基准,「会议纪要」「其他」补充细化)相关的表;
-   外部参考资料仅用于字段命名与口径参考,不得引入需求未提及的表、字段或自动化。"""
+4. 依据**业务流程图**里"A → B"的流转,判断 B 是否需要自动化(A 生效时生成/回写 B);
+   只在确有联动写表的场景配 `automations`,否则给空数组。"""
 
 
-def _user_prompt(plan_markdown, requirement_text, reference_text=""):
-    parts = ["【系统设计方案(基于本项目需求产出)】\n%s" % (plan_markdown or "(空)"),
-             "【业务需求补充说明(用户手填,与资料中的「需求清单」共同构成完整需求)】\n%s"
-             % (requirement_text or "(空)")]
+def _user_prompt(plan_markdown, flowchart_mmd="", reference_text=""):
+    parts = ["【系统设计方案(唯一字段与规则的来源)】\n%s" % (plan_markdown or "(空)")]
+    if flowchart_mmd and flowchart_mmd.strip():
+        parts.append("【业务流程图(表单间的业务流转,用于判断自动化)】\n```mermaid\n%s\n```"
+                     % flowchart_mmd.strip())
     if reference_text and reference_text.strip():
-        parts.append("【需求资料与参考资料(按下方守则区分使用)】\n%s" % reference_text.strip())
+        parts.append("【参考资料(仅供字段命名/口径参考,非本项目需求)】\n%s" % reference_text.strip())
         parts.append(REFERENCE_GUARD)
     return "\n\n".join(parts)
 
@@ -113,13 +120,53 @@ def _clean(design):
     return out if out.get("sheets") else None
 
 
-def _heuristic(requirement_text, plan_markdown):
+def _strip_reports(design):
+    """剔除看板/报表类表与只含它们的模块(它们不进 ER、也不生成应用)。
+
+    自动化只在**引用了被剔除的表**时才丢弃(不按"未命中保留集合"误删)。
+    """
+    dropped = set()
+    sheets, groups = [], []
+    for s in design.get("sheets") or []:
+        if is_report_entity(s.get("title") or s.get("key")):
+            dropped.add(s.get("key"))
+            continue
+        if is_report_entity(s.get("group")):
+            s = dict(s)
+            s["group"] = ""            # 模块被排除:表保留但去掉模块归属
+        sheets.append(s)
+    keep_groups = {s.get("group") for s in sheets if s.get("group")}
+    for g in design.get("groups") or []:
+        if is_report_entity(g) or g not in keep_groups:
+            continue
+        groups.append(g)
+    out = dict(design)
+    out["sheets"] = sheets
+    out["groups"] = groups
+
+    def _refs_removed(a):
+        # 只按**表 key** 判断:`form`(触发表)、`actions[].target`(目标表)、`sub.table`(目标子表)。
+        # 注意 `match[].ref` 是**字段**引用(源侧取值),不是表 key,不能拿来判表。
+        if a.get("form") in dropped:
+            return True
+        for act in a.get("actions") or []:
+            if act.get("target") in dropped:
+                return True
+            if (act.get("sub") or {}).get("table") in dropped:
+                return True
+        return False
+
+    out["automations"] = [a for a in (design.get("automations") or [])
+                          if not _refs_removed(a)]
+    return out
+
+
+def _heuristic(plan_markdown):
     from h3service.ai import HeuristicProvider
-    text = requirement_text or plan_markdown or ""
-    return HeuristicProvider().design(text)
+    return HeuristicProvider().design(plan_markdown or "")
 
 
-def generate_design(plan_markdown: str, requirement_text: str = "",
+def generate_design(plan_markdown: str, flowchart_mmd: str = "",
                     reference_text: str = "", progress=None, provider=None) -> dict:
     def _p(msg, pct=None, level="info"):
         if progress:
@@ -132,7 +179,7 @@ def generate_design(plan_markdown: str, requirement_text: str = "",
         try:
             _p("调用大模型生成 ER 结构…", pct=78)
             raw = provider.complete(
-                _SYSTEM, _user_prompt(plan_markdown, requirement_text, reference_text),
+                _SYSTEM, _user_prompt(plan_markdown, flowchart_mmd, reference_text),
                 json_mode=True)
             _p("解析并清洗模型输出", pct=90)
             cleaned = _clean(llm.extract_json(raw))
@@ -144,9 +191,14 @@ def generate_design(plan_markdown: str, requirement_text: str = "",
     else:
         _p("未配置大模型,使用启发式生成 ER 结构", pct=78, level="warning")
     if not cleaned:
-        cleaned = _clean(_heuristic(requirement_text, plan_markdown))
+        cleaned = _clean(_heuristic(plan_markdown))
         used = "heuristic"
     if not cleaned:
         cleaned = {"sheets": [], "dicts": {}, "groups": [], "automations": []}
+    removed = len(cleaned.get("sheets") or [])
+    cleaned = _strip_reports(cleaned)
+    dropped = removed - len(cleaned.get("sheets") or [])
+    if dropped:
+        _p("已排除 %d 张看板/报表(不建表、不进应用)" % dropped, pct=92, level="info")
     cleaned["provider"] = used
     return cleaned

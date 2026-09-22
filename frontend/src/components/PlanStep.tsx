@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Alert, App as AntApp, Button, Card, Empty, Space, Spin, Tag } from 'antd'
 import { EditOutlined, ReloadOutlined, RobotOutlined, SaveOutlined } from '@ant-design/icons'
 import ReactMarkdown from 'react-markdown'
@@ -7,6 +7,25 @@ import MDEditor from '@uiw/react-md-editor'
 import { errMsg, get, post, put } from '../api/client'
 import { useJob } from '../hooks/useJob'
 import { useTheme } from '../theme/ThemeContext'
+
+/** 目录项(由正文标题收集而来)。 */
+interface TocItem {
+  id: string
+  level: number
+  text: string
+}
+
+/** 跳转/高亮的顶部偏移:顶栏高度 + 吸顶区(项目卡片+步骤条)高度 + 余量。
+ *  吸顶区高度由 ProjectWorkbench 写入 CSS 变量 `--workbench-sticky-h`。 */
+const TOC_GAP = 14
+
+function topOffset(): number {
+  if (typeof document === 'undefined') return 80
+  const cs = getComputedStyle(document.documentElement)
+  const header = parseFloat(cs.getPropertyValue('--header-h')) || 52
+  const sticky = parseFloat(cs.getPropertyValue('--workbench-sticky-h')) || 0
+  return header + sticky + TOC_GAP
+}
 
 export default function PlanStep({
   projectId,
@@ -24,6 +43,9 @@ export default function PlanStep({
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
+  const [toc, setToc] = useState<TocItem[]>([])
+  const [activeId, setActiveId] = useState('')
+  const bodyRef = useRef<HTMLDivElement | null>(null)
 
   async function load() {
     setLoading(true)
@@ -54,6 +76,61 @@ export default function PlanStep({
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId])
+
+  // 正文渲染后,从 DOM 收集标题(h1~h3)并注入锚点 id;目录与正文因此天然一致
+  useEffect(() => {
+    if (editing || !markdown) {
+      setToc([])
+      return
+    }
+    const root = bodyRef.current
+    if (!root) return
+    const els = Array.from(root.querySelectorAll<HTMLElement>('h1, h2, h3'))
+    const items: TocItem[] = []
+    els.forEach((el, i) => {
+      const text = (el.textContent || '').trim()
+      if (!text) return
+      const id = `plan-sec-${i}`
+      el.id = id
+      items.push({ id, level: Number(el.tagName.slice(1)), text })
+    })
+    setToc(items)
+  }, [markdown, editing])
+
+  // 滚动高亮:取最后一个已滚过阈值线的标题为「当前」
+  useEffect(() => {
+    if (!toc.length) return
+    let raf = 0
+    const pick = () => {
+      raf = 0
+      const off = topOffset()
+      let cur = toc[0].id
+      for (const it of toc) {
+        const el = document.getElementById(it.id)
+        if (!el) continue
+        // 留 2px 容差:跳转落点恰在阈值线附近时,避免"该标题未高亮"
+        if (el.getBoundingClientRect().top <= off + 2) cur = it.id
+        else break
+      }
+      setActiveId(cur)
+    }
+    const onScroll = () => {
+      if (!raf) raf = window.requestAnimationFrame(pick)
+    }
+    pick()
+    window.addEventListener('scroll', onScroll, { passive: true })
+    window.addEventListener('resize', onScroll)
+    return () => {
+      if (raf) window.cancelAnimationFrame(raf)
+      window.removeEventListener('scroll', onScroll)
+      window.removeEventListener('resize', onScroll)
+    }
+  }, [toc])
+
+  function jumpTo(id: string) {
+    const el = document.getElementById(id)
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
 
   async function generate() {
     try {
@@ -135,8 +212,30 @@ export default function PlanStep({
               message="当前使用启发式生成(未配置 LLM),可到「系统设置」配置大模型以获得更好效果。"
             />
           ) : null}
-          <div className="md-body">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{markdown}</ReactMarkdown>
+          <div className="plan-layout">
+            {toc.length ? (
+              <nav className="plan-toc" aria-label="方案目录">
+                <div className="plan-toc-title">目录</div>
+                <div className="plan-toc-list">
+                  {toc.map((it) => (
+                    <button
+                      key={it.id}
+                      type="button"
+                      className={`plan-toc-item lv${it.level}${
+                        activeId === it.id ? ' is-active' : ''
+                      }`}
+                      title={it.text}
+                      onClick={() => jumpTo(it.id)}
+                    >
+                      {it.text}
+                    </button>
+                  ))}
+                </div>
+              </nav>
+            ) : null}
+            <div ref={bodyRef} className="plan-body md-body">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{markdown}</ReactMarkdown>
+            </div>
           </div>
         </>
       ) : (

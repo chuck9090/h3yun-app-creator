@@ -189,13 +189,25 @@ class HeuristicProvider(AIProvider):
                                "useOwner": bool(t.get("useOwner")),
                                "group": t.get("group") or "",
                                "layout": t.get("layout") or "auto4",
-                               "controls": t.get("fields") or []})
+                               # 深拷贝:下面可能改写控件(降级字典引用),不能污染语料
+                               "controls": json.loads(json.dumps(t.get("fields") or []))})
             for cat, vals in (proj.get("enums") or {}).items():
                 dicts.setdefault(cat, [v.get("name") if isinstance(v, dict) else v
                                        for v in vals])
             for g in proj.get("groups") or []:
                 if g not in groups:
                     groups.append(g)
+        # 兜底:语料里字段引用了「未声明/空」的字典分类(如某项目 dicts.json 漏了该分类)时,
+        # 直接建表会报「缺分类 / 无可启用条目」→ 这里把这类控件降级为文本,保证草案可建。
+        for s in sheets:
+            for c in s.get("controls") or []:
+                for cc in [c] + list(c.get("columns") or []):
+                    cat = cc.get("dict")
+                    if cat and not dicts.get(cat):
+                        cc.pop("dict", None)
+                        cc.pop("default", None)
+                        if cc.get("type") in ("dropdown", "radio", "checkbox_list"):
+                            cc["type"] = "text"
         return {"sheets": sheets, "dicts": dicts, "groups": groups,
                 "provider": self.name}
 
