@@ -152,6 +152,21 @@ def run():
                     data={"kind": "bogus"})
     ok(r.status_code == 400, "非法 kind 返回 400")
 
+    # 需求清单每个项目只允许一份;会议纪要/其他可多份(见下方清理前验证)
+    r = client.post("/api/projects/%d/documents" % pid,
+                    files={"file": ("requirement2.txt", b"x", "text/plain")},
+                    data={"kind": "requirement"})
+    ok(r.status_code == 409, "重复上传需求清单返回 409")
+    for i in range(2):
+        r = client.post("/api/projects/%d/documents" % pid,
+                        files={"file": ("meeting%d.txt" % i, b"m", "text/plain")},
+                        data={"kind": "meeting"})
+        ok(r.status_code == 200, "会议纪要可上传第 %d 份" % (i + 1))
+    # 清掉刚上传的会议纪要,使后续「文档列表」断言仍为 1 条
+    for d in client.get("/api/projects/%d/documents" % pid).json()["data"]:
+        if d["kind"] == "meeting":
+            client.delete("/api/documents/%d" % d["id"])
+
     # 12) 文档列表 / 详情
     r = client.get("/api/projects/%d/documents" % pid)
     ok(r.status_code == 200 and len(r.json()["data"]) == 1, "文档列表返回 1 条")

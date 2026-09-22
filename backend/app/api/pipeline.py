@@ -93,8 +93,11 @@ def _selected_library_ids(p):
 def _reference_material(p):
     """参考资料素材 = (本项目可抽取文档, 勾选的资料库资料正文)。
 
-    项目文档走结构化抽取(字段无损、数据行限量);资料库资料已是 LLM 整理内容,直接取用。
+    项目文档走结构化抽取(字段无损、数据行限量),按资料类型(需求清单/会议纪要/其他)
+    分组渲染(见 context.build_reference);资料库资料是**外部参考资料**(非本项目需求),
+    加标题以示区分。
     """
+    from ..services import context as ctx
     from ..services import library as library_service
     docs = [d for d in db.list_documents(p["id"]) if d.get("stored_path")]
     ids = _selected_library_ids(p)
@@ -105,7 +108,10 @@ def _reference_material(p):
                 txt = library_service.library_context(it)
                 if txt.strip():
                     lib_parts.append(txt)
-    return docs, "\n\n".join(lib_parts)
+    library_text = "\n\n".join(lib_parts)
+    if library_text.strip():
+        library_text = "%s\n%s" % (ctx.EXTERNAL_REF_TITLE, library_text)
+    return docs, library_text
 
 
 def _library_view(it):
@@ -163,8 +169,13 @@ def generate_plan(id: int, body: S.GenerateIn = None, user=Depends(deps.require_
             ref_text = resolved
             progress("目录模式:已按需纳入 %d 份资料" % len(used), pct=70)
         library_text, ref_text, fit_note = ctx.fit_reference(library_text, ref_text)
-        blocks = [b for b in (library_text, ref_text) if b and b.strip()]
+        blocks = [b for b in (ref_text, library_text) if b and b.strip()]
         reference_text = "\n\n".join(blocks)
+        forms = reference.get("requiredForms") or []
+        checklist = ctx.forms_checklist(forms)
+        if checklist:
+            reference_text = "%s\n\n%s" % (checklist, reference_text)
+            progress("需求清单:识别出 %d 个必做表单,已作为硬约束" % len(forms), pct=71)
         if fit_note:
             progress("提示:%s" % fit_note, pct=70, level="warning")
         for note in reference["notes"][:6]:
@@ -223,8 +234,13 @@ def generate_flowchart(id: int, body: S.GenerateIn = None, user=Depends(deps.req
             ref_text = resolved
             progress("目录模式:已按需纳入 %d 份资料" % len(used), pct=70)
         library_text, ref_text, fit_note = ctx.fit_reference(library_text, ref_text)
-        blocks = [b for b in (library_text, ref_text) if b and b.strip()]
+        blocks = [b for b in (ref_text, library_text) if b and b.strip()]
         reference_text = "\n\n".join(blocks)
+        forms = reference.get("requiredForms") or []
+        checklist = ctx.forms_checklist(forms)
+        if checklist:
+            reference_text = "%s\n\n%s" % (checklist, reference_text)
+            progress("需求清单:识别出 %d 个必做表单,已作为硬约束" % len(forms), pct=71)
         if fit_note:
             progress("提示:%s" % fit_note, pct=70, level="warning")
         for note in reference["notes"][:6]:
@@ -281,8 +297,13 @@ def generate_design(id: int, body: S.GenerateIn = None, user=Depends(deps.requir
             ref_text = resolved
             progress("目录模式:已按需纳入 %d 份资料" % len(used), pct=70)
         library_text, ref_text, fit_note = ctx.fit_reference(library_text, ref_text)
-        blocks = [b for b in (library_text, ref_text) if b and b.strip()]
+        blocks = [b for b in (ref_text, library_text) if b and b.strip()]
         reference_text = "\n\n".join(blocks)
+        forms = reference.get("requiredForms") or []
+        checklist = ctx.forms_checklist(forms)
+        if checklist:
+            reference_text = "%s\n\n%s" % (checklist, reference_text)
+            progress("需求清单:识别出 %d 个必做表单,已作为硬约束" % len(forms), pct=71)
         if fit_note:
             progress("提示:%s" % fit_note, pct=70, level="warning")
         for note in reference["notes"][:6]:
@@ -298,6 +319,12 @@ def generate_design(id: int, body: S.GenerateIn = None, user=Depends(deps.requir
         progress("落盘表单/自动化定义并做离线校验(%d 张表)" % len(design["sheets"]), pct=94)
         design, check, error = _sync(slug, app_code, design)
         storage.set_design(slug, design)
+        # 需求清单必做表单的覆盖度校验:缺失项以告警暴露(不阻断,便于人工补)
+        titles = [s.get("title") or s.get("key") for s in design["sheets"]]
+        missing = ctx.missing_forms(forms, titles)
+        if missing:
+            progress("提示:需求清单中的 %d 个表单未出现在 ER 结构中:%s"
+                     % (len(missing), "、".join(missing[:10])), pct=95, level="warning")
         db.update_project(pid, status="designed")
         db.add_event(pid, "design",
                      "生成 ER 结构(provider=%s, %d 表/%d 自动化)"

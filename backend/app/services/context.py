@@ -22,18 +22,46 @@ MODE_CATALOG = "catalog"
 
 _MAX_PROSE_CHARS = 4000      # 单文件正文(非表格)在紧凑渲染里的上限
 
-# ---------------------------------------------------------------- 提示词:参考资料使用守则
-# 供 plan / design / flowchart 组装提示词时复用。参考资料(资料库 + 上传文档)只是
-# "既有系统的资料/补充文件",**不是本次项目的需求**;若不显式约束,模型会把参考资料
-# 里的表/流程当成本次需求照搬。出处:实测「参考资料被当成项目需求」的问题。
-REFERENCE_GUARD = """【参考资料使用守则(必须遵守)】
-1. 本项目的需求**只以【业务需求】为唯一来源**;【参考资料】不是本项目需求。
-2. 【参考资料】是其他同类系统的既有资料或本项目的补充文件,仅可用于:
-   参考字段命名/字段类型、借用通用口径与设计惯例、完善【业务需求】中已提到的模块。
-3. **不得**把参考资料里出现、但【业务需求】并未提及的表、字段、模块、流程、审批
-   照搬进结果;与本次需求无关的内容一律忽略。
-4. 若参考资料与【业务需求】冲突,一律以【业务需求】为准。
-5. 输出前自检:是否存在"只因参考资料里有、而需求中并无依据"的表/模块?如有,删除。"""
+# ---------------------------------------------------------------- 资料角色与分组
+# 项目上传文档按用户选择的「资料类型」区分角色:
+#   requirement 需求清单 —— 本次用户需求的**基准与总纲**;每项目**只允许一份**;
+#   meeting     会议纪要 —— 对需求的补充:澄清细节、补规则/例外、明确含糊处(可多份);
+#   other       其他     —— 其余补充资料,同样用于补齐需求未展开处(可多份);
+#   existing_system 现有系统资料(历史数据,已收敛到「资料库」)。
+# 资料库勾选的资料则属**外部参考资料**:同类系统的既有资料,不是本项目需求。
+_DOC_GROUPS = (
+    ("requirement", "【需求清单(本项目需求的基准与总纲)】"),
+    ("meeting", "【会议纪要(用于补充与细化上述需求)】"),
+    ("other", "【其他补充资料(用于补齐需求未展开处)】"),
+    ("existing_system", "【现有系统资料(参考)】"),
+)
+_DOC_LABEL = {"requirement": "需求清单", "meeting": "会议纪要", "other": "其他",
+              "existing_system": "现有系统资料"}
+_DOC_ORDER = {k: i for i, (k, _) in enumerate(_DOC_GROUPS)}
+# 资料库勾选的资料属"外部参考资料",由 pipeline 拼在项目需求资料之后,带此标题以示区分。
+EXTERNAL_REF_TITLE = "【外部参考资料(同类系统的既有资料,非本项目需求,仅供字段/口径参考)】"
+
+# 供 plan / design / flowchart 组装提示词时复用。资料分两类:本项目需求资料(含基准的
+# 「需求清单」)与外部参考资料;若不显式区分,模型要么把外部资料当成本次需求照搬,要么
+# 忽略会议纪要等补充。出处:实测「参考资料被当成项目需求」「需求清单与补充资料不分」。
+REFERENCE_GUARD = """【资料使用守则(必须遵守)】
+下面提供的资料分两类,请严格区分、各自按规则使用:
+
+一、本项目需求资料(节标题为「需求清单」「会议纪要」「其他」)
+1. 「需求清单」是本次用户需求的**基准与总纲**(记录了必须实现的模块与表单),
+   其内容可能较简略,但**必须完整覆盖**;
+2. 「会议纪要」「其他」是对需求的**补充**:澄清细节、补充规则与例外、明确含糊之处;
+3. 设计时以「需求清单」为主线组织表与模块,再用补充资料把需求未展开的细节补齐
+   (需求清单是骨架,补充资料是血肉),二者结合构成本次项目的**完整需求**。
+
+二、外部参考资料(节标题为「外部参考资料」)
+4. 它们是同类系统的既有资料,**不是本项目需求**;
+5. 仅可用于借鉴字段命名/字段类型/通用口径/设计惯例;
+6. **不得**把其中出现、但本项目需求未提及的表、字段、模块、流程、审批照搬进结果。
+
+通用规则:
+7. 若资料之间、或资料与本项目需求冲突,一律以「需求清单」为准;
+8. 输出前自检:是否存在"只因外部参考资料里有、而本项目需求中并无依据"的表/模块?如有,删除。"""
 _EXTRACT_SCHEMA = 2          # 抽取缓存结构版本(结构变更时递增,旧缓存自动失效)
 
 
@@ -106,13 +134,19 @@ def render_compact(ext, max_rows, text_chars=_MAX_PROSE_CHARS):
             rows = t.get("rows") or []
             if not rows:
                 continue
-            samples.append("表「%s」数据样例(共 %d 行,展示前 %d 行):"
-                           % (t.get("name", ""), t.get("rowCount", len(rows)),
-                              min(max_rows, len(rows))))
-            for r in rows[:max_rows]:
+            cols = [c for c in (t.get("columns") or []) if c]
+            # 清单表(列数少、行多,如「功能清单」)每行都是需求项:保留全部行,不只取样例
+            cap = max_rows
+            if len(cols) <= C.CTX_LIST_MAX_COLS:
+                cap = max(cap, C.CTX_MAX_LIST_ROWS)
+            cap = min(cap, len(rows))
+            label = "全量" if cap >= len(rows) else "前 %d 行" % cap
+            samples.append("表「%s」数据(共 %d 行,%s):"
+                           % (t.get("name", ""), t.get("rowCount", len(rows)), label))
+            for r in rows[:cap]:
                 samples.append("  " + " | ".join(r))
         if samples:
-            parts.append("【数据样例(限量)】\n" + "\n".join(samples))
+            parts.append("【数据清单/样例】\n" + "\n".join(samples))
     text = (ext.get("text") or "").strip()
     images = ext.get("images") or []
     img_texts = [(i.get("from"), i.get("text")) for i in images if i.get("text")]
@@ -149,7 +183,7 @@ def _extract_summary(ext):
     return "、".join(bits) or (ext.get("status") or "空")
 
 
-def _catalog_line(ext, filename):
+def _catalog_line(ext, filename, doc_kind=""):
     n_tables = len(ext.get("tables") or [])
     n_cols = sum(len(t.get("columns") or []) for t in ext.get("tables") or [])
     n_rows = sum(t.get("rowCount") or 0 for t in ext.get("tables") or [])
@@ -168,7 +202,59 @@ def _catalog_line(ext, filename):
     text = (ext.get("text") or "").strip()
     if text:
         head = text[:60].replace("\n", " ")
-    return "- %s:%s%s" % (filename, "、".join(bits) or "空", (" — " + head) if head else "")
+    label = _DOC_LABEL.get(doc_kind or "other", "其他")
+    return "- [%s] %s:%s%s" % (label, filename, "、".join(bits) or "空",
+                              (" — " + head) if head else "")
+
+
+# ---------------------------------------------------------------- 需求清单:必做表单
+def _forms_from_ext(ext):
+    """从结构化抽取的表格里"挖出"表单清单。
+
+    识别列名含「表单」的列(如需求清单的「表单名称」),取其非空值作为**必做表单名**。
+    过滤掉备注/小标题类噪声(以冒号结尾、含换行或过长),避免把「部署+培训：」等当成表单。
+    """
+    out = []
+    for t in ext.get("tables") or []:
+        cols = t.get("columns") or []
+        idx = next((i for i, c in enumerate(cols) if c and "表单" in c), None)
+        if idx is None:
+            continue
+        for r in t.get("rows") or []:
+            if idx >= len(r):
+                continue
+            v = (r[idx] or "").strip()
+            if not v or v in out:
+                continue
+            if v.endswith((":", "：")) or "\n" in v or len(v) > 40:
+                continue
+            out.append(v)
+    return out
+
+
+def forms_checklist(forms):
+    """把「必须设计的表单清单」渲染成提示词里的硬约束块(来自需求清单,置于最前)。"""
+    forms = [f for f in (forms or []) if f]
+    if not forms:
+        return ""
+    lines = ["【需求清单·必须设计的表单(共 %d 个,一个都不能漏)】" % len(forms)]
+    lines += ["%d. %s" % (i + 1, f) for i, f in enumerate(forms)]
+    lines.append("以上表单来自用户的需求清单,是本次项目的**必做项**:设计方案的表盘点与 ER 结构"
+                 "都必须逐一覆盖、不得遗漏;确有不做的,须在「待确认」中逐条说明理由。")
+    return "\n".join(lines)
+
+
+def missing_forms(forms, titles):
+    """返回 forms 中未出现在 titles 里的项(按包含关系做宽松匹配),供生成后校验提示。"""
+    ts = [t or "" for t in (titles or [])]
+    out = []
+    for f in forms or []:
+        if not f:
+            continue
+        if any(f in t or t in f for t in ts):
+            continue
+        out.append(f)
+    return out
 
 
 # ---------------------------------------------------------------- 组装
@@ -178,10 +264,14 @@ def build_reference(docs, provider, progress=None, pct_range=(5, 55)):
     progress(text, pct=None, level="info") 用于上报"正在抽取哪个文件"。
     """
     docs = list(docs or [])
+    # 按资料类型排序:需求清单(基准)在前,会议纪要/其他(补充)在后,便于模型分主次、
+    # 也让截断时优先保留需求清单。
+    docs.sort(key=lambda d: _DOC_ORDER.get(d.get("kind"), len(_DOC_ORDER)))
     n = len(docs)
     lo, hi = pct_range
     material = []
     notes = []
+    required_forms = []                             # 需求清单里的必做表单(供提示词硬约束)
 
     def _pct(i):
         return lo + int((hi - lo) * (i + 1) / max(1, n))
@@ -197,14 +287,21 @@ def build_reference(docs, provider, progress=None, pct_range=(5, 55)):
                 progress("复用已缓存抽取结果:%s" % fn, pct=_pct(i), level="info")
             else:
                 progress("已抽取 %s(%s)" % (fn, _extract_summary(ext)), pct=_pct(i))
-        compact = render_compact(ext, C.CTX_SAMPLE_ROWS)
+        is_req = (d.get("kind") or "") == "requirement"
+        mrows = C.CTX_MAX_LIST_ROWS if is_req else C.CTX_SAMPLE_ROWS
+        compact = render_compact(ext, mrows)
         material.append({
             "id": d.get("id"), "filename": fn,
             "tokens": estimate_tokens(compact), "compact": compact,
             "status": ext.get("status"), "kind": ext.get("kind"),
+            "docKind": d.get("kind") or "other",
             "tables": len(ext.get("tables") or []),
-            "catalog": _catalog_line(ext, fn),
+            "catalog": _catalog_line(ext, fn, d.get("kind")),
         })
+        if is_req:
+            for f in _forms_from_ext(ext):
+                if f not in required_forms:
+                    required_forms.append(f)
         if ext.get("status") in ("unsupported", "empty") and ext.get("note"):
             notes.append("%s:%s" % (fn, ext["note"]))
         elif ext.get("note"):
@@ -231,7 +328,7 @@ def build_reference(docs, provider, progress=None, pct_range=(5, 55)):
     if total <= budget:
         text = _join_inline(material)
         return {"mode": MODE_INLINE, "text": text, "catalog": "", "material": material,
-                "notes": notes, "totalTokens": total}
+                "notes": notes, "totalTokens": total, "requiredForms": required_forms}
 
     if total <= threshold:
         # 超预算但未到目录阈值:均分预算,字段优先(渲染顺序保证了表格在前)
@@ -250,18 +347,32 @@ def build_reference(docs, provider, progress=None, pct_range=(5, 55)):
                                 "(字段/列名已完整保留)" if m.get("tables") else ""))
         text = _join_inline(kept)
         return {"mode": MODE_TRUNCATED, "text": text, "catalog": "", "material": material,
-                "notes": notes, "totalTokens": total, "budget": budget}
+                "notes": notes, "totalTokens": total, "budget": budget,
+                "requiredForms": required_forms}
 
     # 目录模式
     catalog = "\n".join(m["catalog"] for m in material)
     return {"mode": MODE_CATALOG, "text": "", "catalog": catalog, "material": material,
-            "notes": notes, "totalTokens": total}
+            "notes": notes, "totalTokens": total, "requiredForms": required_forms}
 
 
 def _join_inline(material):
+    """按资料类型分组渲染:需求清单(基准)在前、会议纪要/其他(补充)在后。
+
+    分组标题同时是给模型的**角色信号**(配合 REFERENCE_GUARD),让模型分清
+    "哪个是需求基准、哪些是补充",而不是把所有文件当成一锅资料。
+    """
     blocks = []
-    for m in material:
-        if m.get("compact"):
+    known = set(_DOC_ORDER)
+    for key, title in _DOC_GROUPS:
+        items = [m for m in material if m.get("compact") and (m.get("docKind") or "other") == key]
+        if not items:
+            continue
+        blocks.append(title)
+        for m in items:
+            blocks.append("### 文件:%s\n%s" % (m["filename"], m["compact"]))
+    for m in material:                                  # 兜底:未知类型(不丢内容)
+        if m.get("compact") and (m.get("docKind") or "other") not in known:
             blocks.append("### 文件:%s\n%s" % (m["filename"], m["compact"]))
     return "\n\n".join(blocks)
 

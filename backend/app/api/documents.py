@@ -49,6 +49,9 @@ async def upload_document(pid: int, file: UploadFile = File(...),
     p = deps.get_project(pid, user, write=True)
     if kind not in db.DOC_KINDS:
         raise HTTPException(400, "非法文档类型:%s" % kind)
+    # 「需求清单」是需求基准,每个项目只允许一份;要替换须先删除已有的。
+    if kind == "requirement" and db.list_documents(project_id=pid, kind="requirement"):
+        raise HTTPException(409, "需求清单只允许上传一份,请先删除已有的需求清单再上传")
     ext = os.path.splitext(file.filename or "")[1].lower()
     if ext not in ALLOWED_EXTS:
         raise HTTPException(400, "不支持的文件类型:%s(允许:%s)"

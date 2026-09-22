@@ -117,6 +117,9 @@ def connect():
     c.row_factory = sqlite3.Row
     try:
         c.execute("PRAGMA busy_timeout=30000")   # 后台任务与请求并发写时不立刻报 locked
+        # WAL:读写并发(任务线程写进度时不阻塞请求读)。已为 WAL 时该语句只读不回写,
+        # 无锁开销,可安全地在每次连接兜底设置;并发多实例也能各自完成一次转换。
+        c.execute("PRAGMA journal_mode=WAL")
     except Exception:
         pass
     return c

@@ -28,8 +28,11 @@ def _tighten_file_permissions(path: str) -> None:
         if not user:
             return
         try:
+            # icacls 输出为系统 ANSI(中文 Windows 为 GBK);固定编码并容错解码,
+            # 避免 -X utf8 下用 UTF-8 解码导致 reader 线程抛 UnicodeDecodeError。
             subprocess.run(["icacls", path, "/inheritance:r", "/grant:r", "%s:F" % user],
-                           capture_output=True, text=True, timeout=15, check=False)
+                           capture_output=True, encoding="gbk", errors="replace",
+                           timeout=15, check=False)
         except Exception as e:
             print("[warn] 收紧密钥文件 ACL 失败(可忽略):%s" % e)
         return
@@ -50,7 +53,8 @@ def _warn_if_permissions_loose(path: str) -> None:
     _permission_warned = True
     if os.name == "nt":
         try:
-            out = subprocess.run(["icacls", path], capture_output=True, text=True,
+            out = subprocess.run(["icacls", path], capture_output=True,
+                                 encoding="gbk", errors="replace",
                                  timeout=15, check=False).stdout or ""
         except Exception:
             return

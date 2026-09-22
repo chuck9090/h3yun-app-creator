@@ -22,7 +22,7 @@ import base64
 import os
 import re
 
-VERSION = 2                 # 抽取逻辑版本(供缓存失效判断,改动抽取行为时递增)
+VERSION = 3                 # 抽取逻辑版本(供缓存失效判断,改动抽取行为时递增)
 MAX_TEXT = 200_000          # 单文件正文上限(字符)
 MAX_ROWS = 400              # 单表抽取的数据行上限
 MAX_COLS = 80               # 单表列数上限
@@ -118,25 +118,92 @@ def _vision_image_file(path, ext, provider, label=None):
 
 
 # ---------------------------------------------------------------- Excel
+def _xlsx_grid(ws):
+    """工作表 → 二维字符串网格(行数上限 MAX_ROWS+20,去尾部全空行)。"""
+    grid = []
+    for row in ws.iter_rows(values_only=True):
+        grid.append([_cell(v) for v in row])
+        if len(grid) > MAX_ROWS + 20:
+            break
+    while grid and not any(grid[-1]):
+        grid.pop()
+    return grid
+
+
+def _fill_merged(ws, grid):
+    """把合并单元格的值填满其覆盖区域。
+
+    Excel 里「功能模块」这类列常用**纵向合并**;openpyxl 只在左上角返回值,其余为 None。
+    不填充会丢失数据行的模块归属(实测需求清单因此塌成 1 列、只剩「序号」)。
+    """
+    ncol = max((len(r) for r in grid), default=0)
+    for r in grid:
+        if len(r) < ncol:
+            r.extend([""] * (ncol - len(r)))
+    for rng in ws.merged_cells.ranges:
+        r0, c0 = rng.min_row - 1, rng.min_col - 1
+        if r0 >= len(grid) or c0 >= ncol:
+            continue
+        v = grid[r0][c0]
+        if not v:
+            continue
+        for r in range(r0, min(rng.max_row, len(grid))):
+            for c in range(c0, min(rng.max_col, ncol)):
+                if not grid[r][c]:
+                    grid[r][c] = v
+
+
+def _find_header(grid, scan=12):
+    """找表头行:前 scan 行里第一个**非空单元格 ≥2** 的行。
+
+    用于跳过被合并的标题行(如 A1:F1「功能清单」,原始只有 1 个非空格);
+    否则标题行会被误当表头,`_to_table` 再裁掉尾部空列,整表被压成 1 列。
+    """
+    for i, row in enumerate(grid[:scan]):
+        if sum(1 for c in row if c) >= 2:
+            return i
+    return None
+
+
+def _sheet_to_table(ws, raw, filled):
+    """一个工作表 → 结构化表(识别标题行/表头行;数据行取合并填充后的网格)。"""
+    hi = _find_header(raw)
+    if hi is None:                                   # 单列清单:退化为首个非空行为表头
+        hi = next((i for i, r in enumerate(raw) if any(r)), None)
+        if hi is None:
+            return None
+    title = ""
+    if hi > 0:                                       # 表头之上的独立标题行(如「功能清单」)
+        top = [c for c in raw[hi - 1] if c]
+        if len(top) == 1:
+            title = top[0]
+    t = _to_table(title or ws.title, raw[hi], filled[hi + 1:])
+    if t and title:
+        t["title"] = title
+    return t
+
+
 def _extract_xlsx(path, provider):
     from openpyxl import load_workbook
-    tables, images = [], []
+    tables, texts, images = [], [], []
     limit = _from_config().IMG_MAX_PER_FILE
     wb = load_workbook(path, data_only=True)      # 非 read_only:需要 ws._images
     try:
         for ws in wb.worksheets:
             if len(tables) >= MAX_TABLES:
                 break
-            grid = []
-            for row in ws.iter_rows(values_only=True):
-                grid.append([_cell(v) for v in row])
-                if len(grid) > MAX_ROWS + 1:
-                    break
-            grid = [r for r in grid if any(r)]
+            grid = _xlsx_grid(ws)
             if grid:
-                t = _to_table(ws.title, grid[0], grid[1:])
+                raw = [list(r) for r in grid]        # 表头/标题识别用原始值
+                _fill_merged(ws, grid)               # 数据行用合并填充后的值
+                t = _sheet_to_table(ws, raw, grid)
                 if t:
                     tables.append(t)
+                else:                                # 未识别出表:文本兜底,避免内容静默丢失
+                    flat = "\n".join(" | ".join(c for c in r if c)
+                                     for r in grid if any(r))
+                    if flat.strip():
+                        texts.append(flat[:MAX_TEXT])
             if limit <= 0:
                 continue
             ws_images = list(getattr(ws, "_images", []) or [])
@@ -164,7 +231,7 @@ def _extract_xlsx(path, provider):
                                    "note": "抽取内嵌图片失败:%s" % str(e)[:120]})
     finally:
         wb.close()
-    return {"tables": tables, "text": "", "images": images}
+    return {"tables": tables, "text": "\n\n".join(texts), "images": images}
 
 
 # ---------------------------------------------------------------- Word

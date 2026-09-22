@@ -243,6 +243,7 @@ def t_pipeline_reference():
     check("_reference_material:无项目文档", docs == [], "docs=%d" % len(docs))
     check("_reference_material:返回资料库正文", len(library_text) > 10000,
           "len=%d" % len(library_text))
+    check("_reference_material:外部资料带标题", ctx.EXTERNAL_REF_TITLE in library_text)
 
     budget = 3000
     ref_text = "中" * 500
@@ -293,29 +294,123 @@ def t_extract_cache():
     db.delete_project(proj["id"])
 
 
-# ---------------------------------------------------------------- 7. 参考资料守则(防"参考当需求")
+# ---------------------------------------------------------------- 7. 资料角色分组(需求清单=基准)
+def t_doc_roles():
+    ctx.get_or_extract = _fake_goe
+    try:
+        _set_cfg(CTX_TOKEN_BUDGET=100000, CTX_CATALOG_THRESHOLD=1000000)
+        docs = [{"id": 2, "filename": "会议纪要.docx", "kind": "meeting", "_n": 50},
+                {"id": 1, "filename": "需求说明书.docx", "kind": "requirement", "_n": 50}]
+        ref = ctx.build_reference(docs, None)
+        text = ref["text"]
+        check("roles:含需求清单分组标题", "【需求清单" in text)
+        check("roles:含会议纪要分组标题", "【会议纪要" in text)
+        check("roles:需求清单排在会议纪要前(截断也优先保留)",
+              text.index("【需求清单") < text.index("【会议纪要")
+              and ref["material"][0]["docKind"] == "requirement")
+        check("roles:material 带 docKind", ref["material"][0].get("docKind") == "requirement")
+        check("roles:catalog 行标注资料类型",
+              ctx._catalog_line({"text": "x"}, "a.docx", "requirement").startswith("- [需求清单]"))
+        check("roles:catalog 行未知类型归其他",
+              ctx._catalog_line({}, "b.docx", "").startswith("- [其他]"))
+    finally:
+        ctx.get_or_extract = _ORIG_GOE
+        _restore_cfg()
+
+
+# ---------------------------------------------------------------- 8. 资料使用守则(防"参考当需求"/分清主补)
 def t_reference_guard():
     g = ctx.REFERENCE_GUARD
-    check("guard:守则非空且声明唯一来源", bool(g) and "唯一来源" in g)
+    check("guard:守则非空", bool(g))
+    check("guard:区分需求基准与外部资料", "基准" in g and "外部参考资料" in g)
+    check("guard:会议纪要/其他为补充", "会议纪要" in g and "补充" in g)
 
     up = plan_service._user_prompt("我要做门店管理", "某旧系统的字段清单", None)
     check("plan:有参考时含守则", g in up)
-    check("plan:有参考时标注唯一需求来源", "唯一需求来源" in up and "非本项目需求" in up)
+    check("plan:有参考时标注资料分组", "需求资料与参考资料" in up)
     check("plan:有参考时保留需求原文", "我要做门店管理" in up)
     check("plan:无参考时不含守则", g not in plan_service._user_prompt("我要做门店管理", "", None))
 
     dup = design_service._user_prompt("方案正文", "我要做门店管理", "旧系统字段")
-    check("design:有参考时含守则", g in dup and "非本项目需求" in dup)
+    check("design:有参考时含守则", g in dup and "需求资料与参考资料" in dup)
     check("design:无参考时不含守则", g not in design_service._user_prompt("方案", "需求", ""))
 
     fup = flowchart_service._user_prompt("方案", "我要做门店管理", "旧系统字段")
-    check("flowchart:有参考时含守则", g in fup and "非本项目需求" in fup)
+    check("flowchart:有参考时含守则", g in fup and "需求资料与参考资料" in fup)
     check("flowchart:无参考时不含守则",
           g not in flowchart_service._user_prompt("方案", "需求", ""))
 
-    check("plan:system 含参考资料约束", "唯一的需求来源" in plan_service._SYSTEM)
-    check("design:system 含参考资料约束", "不得引入" in design_service._SYSTEM)
-    check("flowchart:system 含参考资料约束", "不得据此加入" in flowchart_service._SYSTEM)
+    check("plan:system 含需求清单基准", "需求清单" in plan_service._SYSTEM)
+    check("design:system 含需求清单基准", "需求清单" in design_service._SYSTEM)
+    check("flowchart:system 含需求清单基准", "需求清单" in flowchart_service._SYSTEM)
+
+    check("plan:system 按需求清单模块分组且表单必做",
+          "功能模块" in plan_service._SYSTEM and "一个不漏" in plan_service._SYSTEM)
+    check("design:system 模块与清单一致且表单必做",
+          "功能模块" in design_service._SYSTEM and "一个不漏" in design_service._SYSTEM)
+    check("flowchart:system 以表单为节点 + subgraph 分组",
+          "节点 = 表单" in flowchart_service._SYSTEM
+          and "subgraph" in flowchart_service._SYSTEM)
+
+
+# ---------------------------------------------------------------- 9. 需求清单:清单行 + 必做表单
+def t_required_forms():
+    _set_cfg(CTX_SAMPLE_ROWS=8, CTX_MAX_LIST_ROWS=200, CTX_LIST_MAX_COLS=6)
+    rows = [[str(i), "M%d" % (i // 10), "表单%d" % i] for i in range(1, 51)]
+    ext = {"tables": [{"name": "功能清单", "columns": ["序号", "模块", "表单名称"],
+                       "rows": rows, "rowCount": len(rows)}],
+           "text": "", "images": [], "status": "ok"}
+    txt = ctx.render_compact(ext, C.CTX_SAMPLE_ROWS)
+    check("listrows:清单表(列少)保留全部行", "表单50" in txt, "含表单50=%s" % ("表单50" in txt))
+
+    rows2 = [[str(i), "b", "c", "d", "e", "f", "g", "h"] for i in range(1, 51)]
+    ext2 = {"tables": [{"name": "宽表", "columns": ["a", "b", "c", "d", "e", "f", "g", "h"],
+                        "rows": rows2, "rowCount": 50}], "text": "", "images": [], "status": "ok"}
+    txt2 = ctx.render_compact(ext2, C.CTX_SAMPLE_ROWS)
+    check("listrows:宽表仍只取样例", "50 | b" not in txt2, "已按样例截取")
+
+    forms = ctx._forms_from_ext(ext)
+    check("forms:从「表单名称」列抽取", forms[:3] == ["表单1", "表单2", "表单3"], str(forms[:3]))
+    check("forms:共 50 个且去重", len(forms) == 50, str(len(forms)))
+
+    cl = ctx.forms_checklist(forms[:3])
+    check("forms:checklist 标题与数量", "必须设计的表单" in cl and "共 3 个" in cl, cl[:40])
+    check("forms:checklist 逐条列出", "1. 表单1" in cl and "3. 表单3" in cl)
+    check("forms:空清单返回空串", ctx.forms_checklist([]) == "")
+
+    miss = ctx.missing_forms(["物料主数据", "颜色", "BOM管理"], ["物料主数据", "BOM管理表"])
+    check("forms:missing_forms 只留未覆盖项", miss == ["颜色"], str(miss))
+    _restore_cfg()
+
+
+_ORIG_GOE2 = ctx.get_or_extract
+
+
+def t_build_reference_forms():
+    def _goe(doc, provider, on_step=None):
+        if doc.get("kind") == "requirement":
+            rows = [["1", "物料与库存", "物料主数据"], ["2", "研发与样品", "研发项目"]]
+            return {"status": "ok", "kind": "spreadsheet",
+                    "tables": [{"name": "功能清单", "columns": ["序号", "功能模块", "表单名称"],
+                                "rows": rows, "rowCount": 2}],
+                    "text": "", "images": [], "note": ""}
+        return {"status": "ok", "kind": "text", "tables": [], "text": "补充",
+                "images": [], "note": ""}
+
+    ctx.get_or_extract = _goe
+    try:
+        _set_cfg(CTX_TOKEN_BUDGET=100000, CTX_CATALOG_THRESHOLD=1000000)
+        ref = ctx.build_reference(
+            [{"id": 1, "filename": "需求.xlsx", "kind": "requirement"},
+             {"id": 2, "filename": "会议.docx", "kind": "meeting"}], None)
+        check("build_reference:requiredForms 从需求清单提取",
+              ref.get("requiredForms") == ["物料主数据", "研发项目"],
+              str(ref.get("requiredForms")))
+        check("build_reference:需求表以需求清单分组呈现",
+              "【需求清单" in ref["text"] and "物料主数据" in ref["text"])
+    finally:
+        ctx.get_or_extract = _ORIG_GOE2
+        _restore_cfg()
 
 
 # ---------------------------------------------------------------- main
@@ -331,7 +426,10 @@ def main():
         t_fit_reference()
         t_pipeline_reference()
         t_extract_cache()
+        t_doc_roles()
         t_reference_guard()
+        t_required_forms()
+        t_build_reference_forms()
     finally:
         _restore_cfg()
         ctx.get_or_extract = _ORIG_GOE

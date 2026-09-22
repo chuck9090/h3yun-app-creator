@@ -66,6 +66,8 @@ function kindLabel(kind: string): string {
   return DOC_KIND_LABELS[kind] || kind
 }
 
+const REQ_KIND = 'requirement'
+
 export default function RequirementStep({
   projectId,
   canWrite,
@@ -76,7 +78,7 @@ export default function RequirementStep({
   const { message } = AntApp.useApp()
   const { dark } = useTheme()
   const nav = useNavigate()
-  const [kind, setKind] = useState<string>('requirement')
+  const [kind, setKind] = useState<string>(REQ_KIND)
   const [docs, setDocs] = useState<DocumentItem[]>([])
   const [docsLoading, setDocsLoading] = useState(false)
   const [html, setHtml] = useState('')
@@ -84,6 +86,9 @@ export default function RequirementStep({
   const [saving, setSaving] = useState(false)
   const [refIds, setRefIds] = useState<number[]>([])
   const [library, setLibrary] = useState<ProjectRefDocs['library']>([])
+
+  /** 需求清单是需求基准,每个项目只允许一份。 */
+  const hasRequirement = docs.some((d) => d.kind === REQ_KIND)
 
   const loadDocs = useCallback(async () => {
     setDocsLoading(true)
@@ -101,6 +106,12 @@ export default function RequirementStep({
   useEffect(() => {
     loadDocs()
   }, [loadDocs])
+
+  // 已有需求清单时,若上传类型仍停在「需求清单」,自动切到「会议纪要」,避免误拦截。
+  useEffect(() => {
+    if (hasRequirement && kind === REQ_KIND) setKind('meeting')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasRequirement])
 
   useEffect(() => {
     setLoadingReq(true)
@@ -124,6 +135,11 @@ export default function RequirementStep({
 
   const customRequest = async (options: any) => {
     const { file, onSuccess, onError } = options
+    if (kind === 'requirement' && hasRequirement) {
+      message.warning('需求清单只允许一份,请先删除已有的需求清单再上传')
+      onError?.(new Error('需求清单只允许一份'))
+      return
+    }
     const fd = new FormData()
     fd.append('file', file)
     fd.append('kind', kind)
@@ -206,7 +222,9 @@ export default function RequirementStep({
         <Col span={12}>
           <Card title="上传需求资料" style={{ height: '100%' }}>
             <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
-              上传本项目专用的需求 / 会议等资料,系统会自动解析内容供 AI 使用。
+              上传本项目专用的需求资料,系统会自动解析内容供 AI 使用。
+              <strong>需求清单</strong>是需求的基准(每项目仅一份,记录了必须实现的模块与表单),
+              <strong>会议纪要</strong>、<strong>其他</strong>用于补充细化需求清单中未展开的细节,可上传多份。
               已有系统的资料请到左侧「资料库」统一维护,再在右侧勾选参考。
             </Typography.Paragraph>
             <Space style={{ marginBottom: 12 }} wrap>
@@ -214,10 +232,19 @@ export default function RequirementStep({
               <Select
                 value={kind}
                 onChange={setKind}
-                style={{ width: 180 }}
-                options={DOC_KINDS.map((k) => ({ value: k.value, label: k.label }))}
+                style={{ width: 200 }}
+                options={DOC_KINDS.map((k) => ({
+                  value: k.value,
+                  label: k.value === REQ_KIND ? `${k.label}（仅一份）` : k.label,
+                  disabled: k.value === REQ_KIND && hasRequirement,
+                }))}
                 disabled={!canWrite}
               />
+              {hasRequirement ? (
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  已有需求清单,如需替换请先删除
+                </Typography.Text>
+              ) : null}
             </Space>
             <Upload.Dragger
               multiple
@@ -264,7 +291,9 @@ export default function RequirementStep({
                       title={
                         <Space>
                           <span>{doc.filename}</span>
-                          <Tag>{kindLabel(doc.kind)}</Tag>
+                          <Tag color={doc.kind === REQ_KIND ? 'purple' : undefined}>
+                            {kindLabel(doc.kind)}
+                          </Tag>
                           {doc.status ? <Tag color="blue">{doc.status}</Tag> : null}
                         </Space>
                       }

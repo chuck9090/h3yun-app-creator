@@ -18,22 +18,30 @@ import { useTheme } from '../theme/ThemeContext'
 
 /**
  * mermaid 配置。
- *  - htmlLabels: false —— 节点文字渲染为 SVG <text>,而不是 <foreignObject> 里的 HTML。
- *    原因:DOMPurify 的 forbidContents 默认会删掉 foreignObject 的子内容,
- *    会导致"只有框框没有文字"。
- *  - useMaxWidth: false —— 保留图的自然尺寸,避免超宽流程图被 max-width 压得看不清;
- *    容器改为横向滚动。
+ *  - htmlLabels: false —— **必须放在全局**(mermaid 11 已废弃 `flowchart.htmlLabels`,
+ *    放在 flowchart 下不生效)。设为全局 false 后,节点文字渲染为 SVG `<text>`,
+ *    mermaid 不再生成 `<foreignObject>`;否则 DOMPurify 二次净化会清空
+ *    `<foreignObject>` 内的 XHTML(命名空间不兼容),表现为"只有框、没有文字"。
+ *  - flowchart.useMaxWidth: false —— 保留图的自然尺寸,避免超宽流程图被 max-width
+ *    压得看不清;容器改为横向滚动。
  */
 const MERMAID_CFG = {
   startOnLoad: false,
   securityLevel: 'strict' as const,
+  htmlLabels: false,
   fontFamily: 'inherit',
-  flowchart: { htmlLabels: false, useMaxWidth: false },
+  flowchart: { useMaxWidth: false },
 }
 
 mermaid.initialize(MERMAID_CFG)
 
-/** 对 mermaid 产出的 SVG 再做一次白名单净化(XSS 双保险)。 */
+/** 对 mermaid 产出的 SVG 再做一次白名单净化(XSS 双保险)。
+ *
+ * 依赖上面的全局 `htmlLabels:false`(节点文字走 SVG `<text>`,无 `<foreignObject>`)。
+ * 注意:DOMPurify 出于防 mXSS 的考虑,**无法**保留 `<foreignObject>` 内的 XHTML
+ * (命名空间不兼容),即使覆盖 `FORBID_CONTENTS`/`ADD_TAGS` 也会清空其子内容 —— 故
+ * 切勿把 `htmlLabels` 改回 true,否则文字会再次丢失。
+ */
 function sanitizeSvg(svg: string): string {
   return DOMPurify.sanitize(svg, {
     USE_PROFILES: { svg: true, svgFilters: true, html: true },

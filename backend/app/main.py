@@ -6,6 +6,7 @@
 产物:API 文档 /docs;前端为独立工程(frontend/),本服务不托管静态资源。
 """
 import os
+import sqlite3
 import sys
 
 from fastapi import FastAPI, Request
@@ -35,38 +36,43 @@ app.add_middleware(
 )
 
 
+def _add_cols(c, table, cols):
+    """幂等补列。
+
+    并发多实例(或误启多个进程)同时启动时,"读 PRAGMA 时列不存在、随后 ALTER" 存在竞态:
+    另一个进程可能已抢先加列,导致本进程 ALTER 报 `duplicate column name`。
+    这里把该错误视为"已迁移"忽略,避免启动阶段异常把 worker 卡死(历史故障根因)。
+    """
+    have = {r["name"] for r in c.execute("PRAGMA table_info(%s)" % table).fetchall()}
+    for name, ddl in cols:
+        if name in have:
+            continue
+        try:
+            c.execute("ALTER TABLE %s ADD COLUMN %s %s" % (table, name, ddl))
+        except sqlite3.OperationalError as e:
+            if "duplicate column" not in str(e).lower():
+                raise
+
+
 def run_migrations():
     """幂等迁移:建表 + 补列(users.token_version 会话失效;projects.engine_code;jobs 任务字段)。"""
     db.init_db()
     c = db.connect()
     try:
-        ucols = {r["name"] for r in c.execute("PRAGMA table_info(users)").fetchall()}
-        if "token_version" not in ucols:
-            c.execute("ALTER TABLE users ADD COLUMN token_version INTEGER DEFAULT 0")
-        if "avatar" not in ucols:
-            c.execute("ALTER TABLE users ADD COLUMN avatar TEXT DEFAULT ''")
-        if "activation_token" not in ucols:
-            c.execute("ALTER TABLE users ADD COLUMN activation_token TEXT DEFAULT ''")
-        if "activation_expires" not in ucols:
-            c.execute("ALTER TABLE users ADD COLUMN activation_expires INTEGER DEFAULT 0")
-        pcols = {r["name"] for r in c.execute("PRAGMA table_info(projects)").fetchall()}
-        if "engine_code" not in pcols:
-            c.execute("ALTER TABLE projects ADD COLUMN engine_code TEXT DEFAULT ''")
-        if "ref_items" not in pcols:
-            c.execute("ALTER TABLE projects ADD COLUMN ref_items TEXT DEFAULT '[]'")
-        dcols = {r["name"] for r in c.execute("PRAGMA table_info(documents)").fetchall()}
-        if "library_id" not in dcols:
-            c.execute("ALTER TABLE documents ADD COLUMN library_id INTEGER")
-        for col in ("extract_json", "extract_status", "extract_at"):
-            if col not in dcols:
-                c.execute("ALTER TABLE documents ADD COLUMN %s TEXT DEFAULT ''" % col)
-        jcols = {r["name"] for r in c.execute("PRAGMA table_info(jobs)").fetchall()}
-        for col, ddl in (("title", "TEXT DEFAULT ''"), ("variant", "TEXT DEFAULT ''"),
-                         ("project_id", "INTEGER DEFAULT 0"),
-                         ("user_id", "INTEGER DEFAULT 0"), ("progress", "TEXT DEFAULT '[]'"),
-                         ("result", "TEXT DEFAULT ''"), ("error", "TEXT DEFAULT ''")):
-            if col not in jcols:
-                c.execute("ALTER TABLE jobs ADD COLUMN %s %s" % (col, ddl))
+        _add_cols(c, "users", [("token_version", "INTEGER DEFAULT 0"),
+                               ("avatar", "TEXT DEFAULT ''"),
+                               ("activation_token", "TEXT DEFAULT ''"),
+                               ("activation_expires", "INTEGER DEFAULT 0")])
+        _add_cols(c, "projects", [("engine_code", "TEXT DEFAULT ''"),
+                                  ("ref_items", "TEXT DEFAULT '[]'")])
+        _add_cols(c, "documents", [("library_id", "INTEGER"),
+                                   ("extract_json", "TEXT DEFAULT ''"),
+                                   ("extract_status", "TEXT DEFAULT ''"),
+                                   ("extract_at", "TEXT DEFAULT ''")])
+        _add_cols(c, "jobs", [("title", "TEXT DEFAULT ''"), ("variant", "TEXT DEFAULT ''"),
+                              ("project_id", "INTEGER DEFAULT 0"), ("user_id", "INTEGER DEFAULT 0"),
+                              ("progress", "TEXT DEFAULT '[]'"), ("result", "TEXT DEFAULT ''"),
+                              ("error", "TEXT DEFAULT ''")])
         c.commit()
     finally:
         c.close()

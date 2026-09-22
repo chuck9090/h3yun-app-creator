@@ -57,6 +57,10 @@ CTX_MAX_SELECT_FILES = int(os.environ.get("H3AC_CTX_MAX_SELECT_FILES", 12))
 CTX_MAX_SELECT_ROUNDS = int(os.environ.get("H3AC_CTX_MAX_SELECT_ROUNDS", 2))
 # 单个文件在紧凑渲染里保留的数据行样例上限(字段清单不受此限,永远保留)。
 CTX_SAMPLE_ROWS = int(os.environ.get("H3AC_CTX_SAMPLE_ROWS", 8))
+# 需求/清单类表格保留的行数上限:这类表的**每一行都是需求项**(如「功能清单」「模块与功能」),
+# 不能只取样例。列数 ≤ CTX_LIST_MAX_COLS 的表视为清单表,连同「需求清单」类文件一并放宽到该上限。
+CTX_MAX_LIST_ROWS = int(os.environ.get("H3AC_CTX_MAX_LIST_ROWS", 200))
+CTX_LIST_MAX_COLS = int(os.environ.get("H3AC_CTX_LIST_MAX_COLS", 6))
 
 # ---- 内嵌图片识别(Excel/Word/PDF 里的截图、扫描件) ----
 # 单个文件最多识别多少张内嵌图片;0 = 不识别图片。

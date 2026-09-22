@@ -72,18 +72,21 @@ _SYSTEM = """你是氚云低代码平台的表单设计器。根据《系统设�
 - formula(rule, decimal, bindType=number) / group_title(align) / description(content, title)
 - subtable(columns, fixed)
 
-请遵循设计 SOP:命中知识库同类系统的表/字段语义码优先复用,主动补齐常规的
-状态/日期/负责人/备注/附件/明细子表/金额等字段。
-**只设计与【系统设计方案】【业务需求】相关的表;【参考资料】仅用于字段命名与口径参考,
-不得引入业务需求未提及的表、字段或自动化。**"""
+请遵循设计 SOP:
+1. `groups` 的**名称与顺序必须与需求清单的「功能模块」一致**(见资料中的「需求清单」/【需求清单·必须设计的表单】),
+   每个表的 `group` 取其所属模块;不得自创模块名或顺序;
+2. **需求清单中列出的每一个表单都必须设计出来(一个不漏)**;命中知识库同类系统的表/字段语义码优先复用;
+3. 主动补齐常规的状态/日期/负责人/备注/附件/明细子表/金额等字段;
+4. 只设计与《系统设计方案》和本项目需求(「需求清单」为基准,「会议纪要」「其他」补充细化)相关的表;
+   外部参考资料仅用于字段命名与口径参考,不得引入需求未提及的表、字段或自动化。"""
 
 
 def _user_prompt(plan_markdown, requirement_text, reference_text=""):
     parts = ["【系统设计方案(基于本项目需求产出)】\n%s" % (plan_markdown or "(空)"),
-             "【业务需求(本项目的唯一需求来源)】\n%s" % (requirement_text or "(空)")]
+             "【业务需求补充说明(用户手填,与资料中的「需求清单」共同构成完整需求)】\n%s"
+             % (requirement_text or "(空)")]
     if reference_text and reference_text.strip():
-        parts.append("【参考资料(非本项目需求,仅供字段/口径/设计惯例参考)】\n%s"
-                     % reference_text.strip())
+        parts.append("【需求资料与参考资料(按下方守则区分使用)】\n%s" % reference_text.strip())
         parts.append(REFERENCE_GUARD)
     return "\n\n".join(parts)
 

@@ -107,7 +107,7 @@ def main():
     pypdf = _try_import("pypdf")
     try:
         # ========== 0. 版本常量(缓存失效契约) ==========
-        chk("VERSION 抽取逻辑版本为 2", getattr(X, "VERSION", None) == 2,
+        chk("VERSION 抽取逻辑版本为 3", getattr(X, "VERSION", None) == 3,
             str(getattr(X, "VERSION", None)))
 
         # ========== 1. xlsx 表头 + 样例(F14-5 第 1 项) ==========
@@ -262,6 +262,33 @@ def main():
                     len(ext4b["images"]) <= 3, "images=%d" % len(ext4b["images"]))
             finally:
                 C.IMG_MAX_PER_FILE = old_limit
+
+        # ========== 4b. 合并单元格 + 标题行(需求清单形态:功能清单) ==========
+        p6 = os.path.join(tmp, "merged.xlsx")
+        wb6 = Workbook()
+        ws6 = wb6.active
+        ws6.title = "Sheet1"
+        ws6.merge_cells("A1:C1")
+        ws6["A1"] = "功能清单"
+        ws6.append(["序号", "功能模块", "表单名称"])
+        ws6.append(["1", "物料与库存", "物料主数据"])
+        ws6.append(["", "", "颜色"])
+        ws6.append(["2", "研发与样品", "研发项目"])
+        ws6.merge_cells("B3:B4")
+        wb6.save(p6)
+        wb6.close()
+        ext6 = X.extract_document(
+            {"filename": "merged.xlsx", "stored_path": p6, "ext": ".xlsx"},
+            provider=FakeVision(available=False))
+        t6 = (ext6.get("tables") or [{}])[0]
+        chk("xlsx 合并:标题行识别为表名(不塌成 1 列)",
+            t6.get("name") == "功能清单", str(t6.get("name")))
+        chk("xlsx 合并:表头完整(6→3 列)",
+            t6.get("columns") == ["序号", "功能模块", "表单名称"], str(t6.get("columns")))
+        chk("xlsx 合并:全部数据行保留", t6.get("rowCount") == 3, str(t6.get("rowCount")))
+        rows6 = t6.get("rows") or []
+        chk("xlsx 合并:纵向合并列被填充(颜色行带模块)",
+            len(rows6) > 1 and rows6[1][1] == "物料与库存", str(rows6[1:2]))
 
         # ========== 5. status=ok 时图片 note 仍保留(F14-5 第 5 项) ==========
         # 5a. _merge_notes:有正文时不产生整体 note,无正文时汇总图片 note

@@ -505,16 +505,17 @@ export const COLUMN_TYPES = [
   'image',
 ]
 
-/** 项目内可上传的资料类型(「现有系统资料」已收敛到左侧「资料库」)。 */
+/** 项目内可上传的资料类型(「现有系统资料」已收敛到左侧「资料库」)。
+ * 「需求清单」是需求基准、每个项目**只允许一份**;会议纪要/其他可多份。 */
 export const DOC_KINDS: { value: DocKind; label: string }[] = [
-  { value: 'requirement', label: '需求文档' },
+  { value: 'requirement', label: '需求清单' },
   { value: 'meeting', label: '会议纪要' },
   { value: 'other', label: '其他' },
 ]
 
 /** 全部 kind 的显示名(含历史数据 existing_system,用于列表标签展示)。 */
 export const DOC_KIND_LABELS: Record<string, string> = {
-  requirement: '需求文档',
+  requirement: '需求清单',
   existing_system: '现有系统资料',
   meeting: '会议纪要',
   other: '其他',
