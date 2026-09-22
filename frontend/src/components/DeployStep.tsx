@@ -24,7 +24,6 @@ import {
   post,
   Project,
 } from '../api/client'
-import JobProgressPanel from './JobProgressPanel'
 import { useJob } from '../hooks/useJob'
 
 function normalizeSheets(res: any): DeploySheetResult[] {
@@ -290,7 +289,6 @@ export default function DeployStep({
           </Space>
         }
       >
-        <JobProgressPanel job={deployJob.job} />
         {gate ? (
           <Alert
             type="warning"
@@ -387,8 +385,6 @@ export default function DeployStep({
           <Empty description="尚未生成应用" />
         ) : null}
       </Card>
-
-      <JobProgressPanel job={verifyJob.job} />
 
       {verifyResult ? (
         <Card title="回读核对结果" style={{ marginTop: 16 }}>

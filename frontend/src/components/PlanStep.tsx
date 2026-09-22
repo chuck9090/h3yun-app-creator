@@ -5,7 +5,6 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import MDEditor from '@uiw/react-md-editor'
 import { errMsg, get, post, put } from '../api/client'
-import JobProgressPanel from './JobProgressPanel'
 import { useJob } from '../hooks/useJob'
 import { useTheme } from '../theme/ThemeContext'
 
@@ -40,7 +39,7 @@ export default function PlanStep({
   }
 
   // 异步任务:切页/刷新后仍能恢复「处理中」并展示进度明细
-  const { job, running, start } = useJob(
+  const { running, start } = useJob(
     projectId,
     'plan',
     async () => {
@@ -118,7 +117,6 @@ export default function PlanStep({
         </Space>
       }
     >
-      <JobProgressPanel job={job} />
       {loading ? (
         <div style={{ textAlign: 'center', padding: 24 }}>
           <Spin />

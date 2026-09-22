@@ -33,8 +33,17 @@ import DesignStep from '../components/DesignStep'
 import DeployStep from '../components/DeployStep'
 import ProjectSettingsModal from '../components/ProjectSettingsModal'
 import MembersModal from '../components/MembersModal'
+import { JobCenter, JobsProvider, jobPct, useJobs } from '../components/JobCenter'
 
 const STEP_KEYS = ['requirement', 'plan', 'flowchart', 'design', 'deploy']
+
+/** 阶段 → 该阶段的任务类型(用于在步骤标题上显示生成进度百分比)。 */
+const STAGE_JOB_KINDS: Record<string, string[]> = {
+  plan: ['plan'],
+  flowchart: ['flowchart'],
+  design: ['design'],
+  deploy: ['deploy', 'verify'],
+}
 
 const STEP_LABELS: Record<string, string> = {
   requirement: '需求',
@@ -62,8 +71,20 @@ function statusRank(status?: string): number {
 
 export default function ProjectWorkbench({ me }: { me: User }) {
   const { id } = useParams()
+  // key=id:切换项目时重建 Provider,清空上一个项目的任务进度
+  return (
+    <JobsProvider key={id}>
+      <WorkbenchInner me={me} />
+      <JobCenter />
+    </JobsProvider>
+  )
+}
+
+function WorkbenchInner({ me }: { me: User }) {
+  const { id } = useParams()
   const nav = useNavigate()
   const { message } = AntApp.useApp()
+  const { jobs } = useJobs()
   const [project, setProject] = useState<Project | null>(null)
   const [loading, setLoading] = useState(true)
   const [active, setActive] = useState('requirement')
@@ -120,8 +141,33 @@ export default function ProjectWorkbench({ me }: { me: User }) {
     deploy: rank < statusRank('designed') ? '请先完成「ER 设计」阶段' : undefined,
   }
 
+  /** 该阶段任务的进度百分比(运行中的优先),无任务返回 undefined。 */
+  const stagePct = (key: string): number | undefined => {
+    const kinds = STAGE_JOB_KINDS[key] || []
+    let fallback: number | undefined
+    for (const k of kinds) {
+      const job = jobs[k]
+      if (!job) continue
+      const p = jobPct(job)
+      if (job.status === 'running') return p ?? 0
+      if (job.status === 'failed') return undefined
+      if (p !== undefined && fallback === undefined) fallback = p
+    }
+    return fallback
+  }
+
   const stageText = (key: string) => {
-    const wrap = <span>{STEP_LABELS[key]}</span>
+    const pct = stagePct(key)
+    const wrap = (
+      <span>
+        {STEP_LABELS[key]}
+        {typeof pct === 'number' && pct < 100 ? (
+          <Tag color="processing" style={{ marginLeft: 6, marginInlineEnd: 0 }}>
+            {pct}%
+          </Tag>
+        ) : null}
+      </span>
+    )
     return gates[key] ? <Tooltip title={gates[key]}>{wrap}</Tooltip> : wrap
   }
 

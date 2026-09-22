@@ -239,7 +239,7 @@ def forms_checklist(forms):
         return ""
     lines = ["【需求清单·必须设计的表单(共 %d 个,一个都不能漏)】" % len(forms)]
     lines += ["%d. %s" % (i + 1, f) for i, f in enumerate(forms)]
-    lines.append("以上表单来自用户的需求清单,是本次项目的**必做项**:设计方案的表盘点与 ER 结构"
+    lines.append("以上表单来自用户的需求清单,是本次项目的**必做项**:设计方案与 ER 结构"
                  "都必须逐一覆盖、不得遗漏;确有不做的,须在「待确认」中逐条说明理由。")
     return "\n".join(lines)
 

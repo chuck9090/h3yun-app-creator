@@ -6,6 +6,7 @@ import {
   Job,
   JobStartResponse,
 } from '../api/client'
+import { useJobs } from '../components/JobCenter'
 
 const POLL_MS = 1200
 
@@ -36,6 +37,11 @@ export function useJob(
 ): UseJobResult {
   const [job, setJob] = useState<Job | null>(null)
   const [error, setError] = useState('')
+  // 上报给「任务进度中心」(右侧边栏展示详细进度;阶段标题只显示百分比)
+  const { report } = useJobs()
+  useEffect(() => {
+    report(kind, job)
+  }, [kind, job, report])
 
   const doneRef = useRef(onDone)
   doneRef.current = onDone
@@ -50,6 +56,7 @@ export function useJob(
     const my = ++reqSeq.current
     let alive = true
     seenStatus.current = ''
+    setJob(null)          // 切换项目时先清空,避免沿用上一个项目的任务
     getProjectJobs(projectId, true)
       .then((r) => {
         if (!alive || reqSeq.current !== my) return

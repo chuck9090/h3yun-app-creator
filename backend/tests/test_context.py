@@ -413,6 +413,47 @@ def t_build_reference_forms():
         _restore_cfg()
 
 
+# ---------------------------------------------------------------- 10. 方案格式(客户可交付)
+def t_plan_format():
+    sys_ = plan_service._SYSTEM
+    check("plan:新结构含 模块/表单/业务内容",
+          "# <模块名>" in sys_ and "## <表单名>" in sys_ and "业务内容:" in sys_)
+    check("plan:不含旧的表盘点/界面配置",
+          "表盘点" not in sys_ and "界面手工配置项" not in sys_)
+    check("plan:要求字段用中文名、不写 key",
+          "中文业务名称" in sys_ and "不写字段的英文编码" in sys_)
+    check("plan:含脱敏结构范例(虚构零售)",
+          "连锁零售" in sys_ and "商品档案" in sys_)
+    check("plan:范例已脱敏(无客户/能源字样)",
+          "奥桦" not in sys_ and "能源" not in sys_ and "煤炭" not in sys_)
+
+    md = ("# 项目概述\nx\n# 基础资料\n## 门店档案\n业务内容:\n1. a\n"
+          "## 区域档案\n业务内容:\n1. b\n"
+          "# 合同管理\n## 加盟合同\n业务内容:\n1. c\n")
+    tabs = flowchart_service._tables_from_plan(md)
+    check("flowchart:从方案 H2 解析表单(无 key)",
+          [t for _, t in tabs] == ["门店档案", "区域档案", "加盟合同"], str(tabs))
+    mmd = flowchart_service._heuristic_flow(md, "门店 区域 合同")
+    check("flowchart:每个节点都带业务名标签",
+          all(('["%s"]' % n) in mmd for n in ["门店档案", "区域档案", "加盟合同"]), mmd)
+    check("flowchart:仍是合法 mermaid", mmd.startswith("flowchart"), mmd[:20])
+
+    # 无「业务内容」的 H2(如旧格式的章节标题)不应被当成表单
+    md_none = "# 系统设计方案\n## 一、项目概述\nxx\n## 二、表盘点\n| 表 key | 表单名 |\n|---|---|\n"
+    check("flowchart:无业务内容的 H2 不误判为表单",
+          flowchart_service._tables_from_plan(md_none) == [], str(flowchart_service._tables_from_plan(md_none)))
+
+    # 旧格式(表盘点表格,首列是 key)→ 回退解析正确
+    md_old = ("# 系统设计方案\n## 一、项目概述\nx\n## 二、表盘点\n"
+              "| 表 key | 表单名 | 角色 | 依据 | 置信度 |\n|---|---|---|---|---|\n"
+              "| customer | 客户档案 | 主数据 | 需求清单 | ● |\n"
+              "| contract | 合同 | 单据 | 需求清单 | ● |\n## 三、表关系\n")
+    check("flowchart:旧格式回退解析表盘点",
+          flowchart_service._tables_from_plan(md_old) == [("customer", "客户档案"),
+                                                          ("contract", "合同")],
+          str(flowchart_service._tables_from_plan(md_old)))
+
+
 # ---------------------------------------------------------------- main
 def main():
     print("=" * 70)
@@ -430,6 +471,7 @@ def main():
         t_reference_guard()
         t_required_forms()
         t_build_reference_forms()
+        t_plan_format()
     finally:
         _restore_cfg()
         ctx.get_or_extract = _ORIG_GOE

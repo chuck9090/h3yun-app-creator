@@ -38,7 +38,7 @@ DB/上传件/密钥/项目工作区/知识库产物/凭据都在 `data/`。
 | 3 | 看到自己的/被授权的项目 | 项目列表 | `GET /api/projects`(owner 或 member) |
 | 4 | 新建项目:项目名称 / 应用编码 / 引擎编码 / h3_token | 新建弹窗 | `POST /api/projects`(engineCode 用户填/由 token 预填) |
 | 5 | 上传资料(需求清单/会议纪要/其他)+ 富文本补充 | 需求步骤页 | 文档解析 + 需求保存(需求清单限一份,重复 409) |
-| 6 | 点「生成方案」→ 系统设计方案(HTML 展示,底层 md) | 方案页 | `POST .../plan/generate` |
+| 6 | 点「生成方案」→ 系统设计方案(**客户可交付格式**:标题1=模块/标题2=表单/编号业务内容,不含 key 与界面配置) | 方案页 | `POST .../plan/generate` |
 | 7 | 打开方案编辑页改 markdown | md 编辑器 | `PUT .../plan` |
 | 8 | 点「生成业务流程图」 | 流程图页(Mermaid) | `POST .../flowchart/generate` |
 | 9 | 不满意→改方案→重生成流程图(循环) | 同上 | 同上 |
@@ -252,7 +252,10 @@ GET /api/jobs/{jobId}                  (登录用户)  → data:job
 ```
 `job` = `{id,kind,title,projectId,userId,status(running|done|failed),progress:[{ts,level,text,pct}],result,error,detail,createdAt,updatedAt}`。
 
-前端进入步骤时先查 `active=1` 的任务以**恢复「处理中」**并展示进度,运行中禁用按钮;完成后重新拉取内容。
+前端进入步骤时先查 `active=1` 的任务以**恢复「处理中」**,运行中禁用按钮;完成后重新拉取内容。
+**进度展示统一在右侧「生成进度」侧栏**(可收起为右下角悬浮图标,悬浮图标显示运行中任务的最大百分比);
+**各阶段标题显示该阶段任务的百分比**(plan→plan、flowchart→flowchart、design→design、deploy→deploy/verify),
+阶段内容区不再内嵌进度面板。
 任务跑在**进程内线程池**(单进程部署假设):
 - **看门狗**:running 任务超过 `H3AC_JOB_TIMEOUT_MIN` 分钟(默认 30)无进度更新,查询/提交时自动标记 failed,
   释放占位,避免任务卡死后该项目该动作永久无法重试。

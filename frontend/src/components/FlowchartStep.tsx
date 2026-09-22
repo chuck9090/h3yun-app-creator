@@ -12,7 +12,6 @@ import {
 import mermaid from 'mermaid'
 import DOMPurify from 'dompurify'
 import { errMsg, get, post, put } from '../api/client'
-import JobProgressPanel from './JobProgressPanel'
 import { useJob } from '../hooks/useJob'
 import { useTheme } from '../theme/ThemeContext'
 
@@ -90,7 +89,7 @@ export default function FlowchartStep({
     }
   }
 
-  const { job, running, start } = useJob(
+  const { running, start } = useJob(
     projectId,
     'flowchart',
     async () => {
@@ -207,7 +206,6 @@ export default function FlowchartStep({
         </Space>
       }
     >
-      <JobProgressPanel job={job} />
       {gate ? (
         <Alert
           type="warning"

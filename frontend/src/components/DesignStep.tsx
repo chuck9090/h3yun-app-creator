@@ -39,7 +39,6 @@ import {
   type Node,
 } from '@xyflow/react'
 import ErNode from './ErNode'
-import JobProgressPanel from './JobProgressPanel'
 import { useJob } from '../hooks/useJob'
 import { useTheme } from '../theme/ThemeContext'
 import {
@@ -144,7 +143,7 @@ export default function DesignStep({
     }
   }, [projectId, message, loadEr])
 
-  const { job, running, start } = useJob(
+  const { running, start } = useJob(
     projectId,
     'design',
     async (j) => {
@@ -414,7 +413,6 @@ export default function DesignStep({
             description={gate}
           />
         ) : null}
-        <JobProgressPanel job={job} />
         {loading ? (
           <div style={{ textAlign: 'center', padding: 24 }}>
             <Typography.Text type="secondary">加载中...</Typography.Text>

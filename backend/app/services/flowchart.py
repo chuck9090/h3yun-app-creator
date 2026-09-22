@@ -62,18 +62,48 @@ def _valid(mermaid: str) -> bool:
     return head.startswith("flowchart") or head.startswith("graph")
 
 
+_HEADING = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
 _TABLE_ROW = re.compile(r"^\|\s*([A-Za-z][A-Za-z0-9]*)\s*\|\s*([^|\n]+?)\s*\|", re.M)
 
 
 def _tables_from_plan(plan_markdown: str):
-    """从方案 markdown 的「表盘点」表格里解析出 (key, 表单名)。"""
+    """从方案解析出表单清单 [(id, 表单名)]。
+
+    新方案格式:模块为 H1、表单为 H2,且表单标题下紧跟「业务内容:」;方案里**无 key**,
+    按出现顺序生成稳定 id(form1、form2…)。
+    识别不到(旧格式方案 / 用户手改)→ 回退兼容旧的「表盘点」表格。
+    """
+    text = plan_markdown or ""
+    lines = text.splitlines()
     out, seen = [], set()
-    for key, title in _TABLE_ROW.findall(plan_markdown or ""):
-        if key in seen or key.lower() in ("table",):
+    for i, ln in enumerate(lines):
+        m = _HEADING.match(ln)
+        if not m or len(m.group(1)) != 2:          # 只看 H2
             continue
-        seen.add(key)
-        out.append((key, title.strip().strip("`")))
-    return out
+        title = m.group(2).strip().strip("`").strip()
+        if not title or title in seen:
+            continue
+        # 表单标题的判据:后面紧跟的**首个非空行**是「业务内容」(避免把
+        # 旧格式的「## 一、项目概述 / ## 二、表盘点 …」等章节标题误当表单)
+        nxt = ""
+        for j in range(i + 1, min(i + 6, len(lines))):
+            t = lines[j].strip()
+            if t:
+                nxt = t
+                break
+        if not nxt.startswith("业务内容"):
+            continue
+        seen.add(title)
+        out.append(title)
+    if out:
+        return [("form%d" % (i + 1), t) for i, t in enumerate(out)]
+    rows, s2 = [], set()
+    for key, title in _TABLE_ROW.findall(text):
+        if key in s2 or key.lower() in ("table",):
+            continue
+        s2.add(key)
+        rows.append((key, title.strip().strip("`")))
+    return rows
 
 
 def _sanitize_id(key: str) -> str:
@@ -84,24 +114,33 @@ def _sanitize_id(key: str) -> str:
 
 
 def _heuristic_flow(plan_markdown: str, requirement_text: str = "") -> str:
-    """离线骨架:方案里的表 + (可选)启发式样本关系。"""
+    """离线骨架:方案里的表单(H2)按顺序连成流程,并尽力接上启发式样本关系。"""
     tables = _tables_from_plan(plan_markdown)
-    relations = []
     from h3service.ai import HeuristicProvider
     prop = HeuristicProvider().propose(requirement_text or plan_markdown or "")
-    for r in prop.get("relations") or []:
-        if r.get("from") and r.get("to"):
-            relations.append((r["from"], r["to"], r.get("kind") or "关联"))
     if not tables:
         for t in prop.get("tables") or []:
-            tables.append((t.get("key", ""), t.get("title") or t.get("key", "")))
+            key = t.get("key") or ""
+            if key:
+                tables.append((key, t.get("title") or key))
 
-    # 去重表,并补齐关系里出现但表盘点缺失的节点
+    # 去重:保持出现顺序
     titles, order = {}, []
     for key, title in tables:
         if key and key not in titles:
             titles[key] = title or key
             order.append(key)
+
+    # 关系:启发式的 key 关系按「表单名」映射到本方案的表单(方案里已无 key)
+    by_title = {str(t).strip(): k for k, t in tables}
+    key2title = {t.get("key"): (t.get("title") or t.get("key"))
+                 for t in (prop.get("tables") or []) if t.get("key")}
+    relations = []
+    for r in prop.get("relations") or []:
+        ia = by_title.get(str(key2title.get(r.get("from")) or "").strip())
+        ib = by_title.get(str(key2title.get(r.get("to")) or "").strip())
+        if ia and ib:
+            relations.append((ia, ib, r.get("kind") or "关联"))
     for a, b, _ in relations:
         for k in (a, b):
             if k and k not in titles:
@@ -113,7 +152,11 @@ def _heuristic_flow(plan_markdown: str, requirement_text: str = "") -> str:
         lines.append("  S --> D((归档))")
         return "\n".join(lines)
 
-    lines.append("  S --> %s[%s]" % (_sanitize_id(order[0]), titles[order[0]]))
+    # 先声明全部节点(带业务名标签,引号包裹以防标题含标点破坏语法),再画流转与关系
+    for k in order:
+        label = str(titles[k]).replace('"', "'")
+        lines.append('  %s["%s"]' % (_sanitize_id(k), label))
+    lines.append("  S --> %s" % _sanitize_id(order[0]))
     for i in range(len(order) - 1):
         a, b = order[i], order[i + 1]
         lines.append("  %s --> %s" % (_sanitize_id(a), _sanitize_id(b)))
