@@ -53,7 +53,25 @@ def _valid_token(project_body_token):
 
 def _member_view(m):
     return {"userId": m["user_id"], "role": m["role"],
-            "email": m.get("email", ""), "displayName": m.get("display_name", "")}
+            "email": m.get("email", ""), "displayName": m.get("display_name", ""),
+            "owner": False}
+
+
+def _members_view(p):
+    """成员列表视图:**创建者(所有者)置顶显示**,其后是已授权成员。
+
+    所有者不在 project_members 表里,但对用户而言他同样是「项目成员」且权限最高,
+    故在列表首行以 role=owner 呈现(前端标注「所有者」且不可移除)。
+    """
+    rows = []
+    owner_id = p.get("owner_id") or 0
+    if owner_id:
+        u = db.get_user_by_id(owner_id)
+        rows.append({"userId": owner_id, "role": "owner", "owner": True,
+                     "email": (u or {}).get("email", ""),
+                     "displayName": (u or {}).get("display_name", "")})
+    rows.extend(_member_view(m) for m in db.list_members(p["id"]))
+    return rows
 
 
 @router.get("/projects")
@@ -137,8 +155,8 @@ def _require_owner(p, user):
 
 @router.get("/projects/{pid}/members")
 def list_members(pid: int, user=Depends(deps.get_current_user)):
-    deps.get_project(pid, user)
-    return _result([_member_view(m) for m in db.list_members(pid)])
+    p = deps.get_project(pid, user)
+    return _result(_members_view(p))
 
 
 @router.post("/projects/{pid}/members")
@@ -152,7 +170,7 @@ def add_member(pid: int, body: MemberIn, user=Depends(deps.get_current_user)):
     if body.userId == p.get("owner_id"):
         raise HTTPException(400, "项目所有者无需再授权")
     db.set_member(pid, body.userId, body.role)
-    return _result([_member_view(m) for m in db.list_members(pid)], "成员已授权")
+    return _result(_members_view(p), "成员已授权")
 
 
 @router.delete("/projects/{pid}/members/{userId}")

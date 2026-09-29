@@ -1,78 +1,28 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent as RPointerEvent } from 'react'
-import { Alert, App as AntApp, Button, Card, Empty, Input, Modal, Segmented, Select, Space, Spin, Tag, Tooltip } from 'antd'
+import { Alert, App as AntApp, Button, Card, Empty, Modal, Space, Spin, Tag, Tooltip } from 'antd'
 import {
   ArrowLeftOutlined,
   CompressOutlined,
-  EditOutlined,
+  DownloadOutlined,
   FullscreenExitOutlined,
   FullscreenOutlined,
   MinusOutlined,
+  OneToOneOutlined,
   PlusOutlined,
   ReloadOutlined,
   RobotOutlined,
-  SaveOutlined,
 } from '@ant-design/icons'
-import mermaid from 'mermaid'
 import DOMPurify from 'dompurify'
-import { errMsg, get, post, put } from '../api/client'
+import { errMsg, get, post } from '../api/client'
 import { useJob } from '../hooks/useJob'
-import { useTheme } from '../theme/ThemeContext'
 
-/**
- * mermaid 配置。
- *  - htmlLabels: false —— **必须放在全局**(mermaid 11 已废弃 `flowchart.htmlLabels`,
- *    放在 flowchart 下不生效)。设为全局 false 后,节点文字渲染为 SVG `<text>`,
- *    mermaid 不再生成 `<foreignObject>`;否则 DOMPurify 二次净化会清空
- *    `<foreignObject>` 内的 XHTML(命名空间不兼容),表现为"只有框、没有文字"。
- *  - flowchart.useMaxWidth: false —— 保留图的自然尺寸,避免超宽流程图被 max-width
- *    压得看不清;容器改为横向滚动。
- */
-const MERMAID_CFG = {
-  startOnLoad: false,
-  securityLevel: 'strict' as const,
-  htmlLabels: false,
-  fontFamily: 'inherit',
-  flowchart: { useMaxWidth: false },
-}
-
-mermaid.initialize(MERMAID_CFG)
-
-/** 对 mermaid 产出的 SVG 再做一次白名单净化(XSS 双保险)。
- *
- * 依赖上面的全局 `htmlLabels:false`(节点文字走 SVG `<text>`,无 `<foreignObject>`)。
- * 注意:DOMPurify 出于防 mXSS 的考虑,**无法**保留 `<foreignObject>` 内的 XHTML
- * (命名空间不兼容),即使覆盖 `FORBID_CONTENTS`/`ADD_TAGS` 也会清空其子内容 —— 故
- * 切勿把 `htmlLabels` 改回 true,否则文字会再次丢失。
- */
+/** 对后端渲染的 SVG 再做一次白名单净化(XSS 纵深防御)。 */
 function sanitizeSvg(svg: string): string {
   return DOMPurify.sanitize(svg, {
     USE_PROFILES: { svg: true, svgFilters: true, html: true },
   })
 }
-
-const MMID_PREFIX = 'h3ac-mermaid-'
-
-/**
- * 清理 mermaid 残留节点。
- *
- * mermaid.render 失败时会往 `document.body` 追加一个 `#d<id>` 容器并在其中渲染
- * 「Syntax error in text / mermaid version …」错误图,**且不会自行清理** ——
- * 不处理就会以"页面背景内容"的形式一直留在页面上(刷新才消失)。
- * 传 id 只清该次;不传则清掉所有历史残留。
- */
-function purgeMermaidStray(id?: string) {
-  try {
-    const sel = id
-      ? `[id="d${id}"], [id="i${id}"]`
-      : `[id^="d${MMID_PREFIX}"], [id^="i${MMID_PREFIX}"]`
-    document.querySelectorAll(sel).forEach((n) => n.remove())
-  } catch {
-    /* 忽略:清理失败不应影响渲染流程 */
-  }
-}
-
-let renderSeq = 0
 
 // 缩放范围与步进
 const ZOOM_MIN = 0.2
@@ -104,53 +54,6 @@ function applyZoom(container: HTMLElement | null, zoom: number) {
 
 const clampZoom = (z: number) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z))
 
-/** 从 mermaid 源码中拆出模块(subgraph)与公共部分。
- *
- * 生成器按模块输出 `subgraph ModN["模块名"] … end`;把每个模块单独成图,
- * 即可避免 mermaid 对无连接 subgraph 的纵向堆叠(整图又高又窄、看不清)。
- * 非 subgraph 的行(跨模块边等)归入 shared,只在「全部」视图里出现。
- */
-interface MmdModule {
-  id: string
-  name: string
-  body: string[] // 含 subgraph 头与 end
-}
-function splitMmdByModule(src: string): { header: string; modules: MmdModule[]; shared: string[] } {
-  const lines = (src || '').split('\n')
-  const header: string[] = []
-  const shared: string[] = []
-  const modules: MmdModule[] = []
-  let cur: MmdModule | null = null
-  let inSharedHead = true
-  for (const ln of lines) {
-    const m = ln.match(/^\s*subgraph\s+(\S+?)\s*\[\s*"?([^"\]]*)"?\s*\]/)
-    if (m) {
-      cur = { id: m[1], name: (m[2] || m[1]).trim(), body: [ln] }
-      modules.push(cur)
-      inSharedHead = false
-      continue
-    }
-    if (cur) {
-      cur.body.push(ln)
-      if (/^\s*end\s*$/.test(ln)) cur = null
-      continue
-    }
-    if (inSharedHead) header.push(ln)
-    else if (ln.trim()) shared.push(ln)
-  }
-  const head = (header.find((l) => /^\s*(flowchart|graph)\b/i.test(l)) || 'flowchart LR').trim()
-  return { header: head, modules, shared }
-}
-
-/** 某个模块单独成图的 mermaid 源码。
- *  强制子图内 `direction LR`:模块内是一条线性链,横向展开矮而宽(约 120px 高),
- *  配合「适配宽度」正好铺满面板;若沿用子图默认的纵向会高达上千像素。 */
-function moduleMmd(header: string, mod: MmdModule): string {
-  const body = mod.body.filter((l) => !/^\s*direction\s+/i.test(l))
-  // 在 subgraph 头之后插入 direction LR
-  return [header, body[0], '    direction LR', ...body.slice(1)].join('\n')
-}
-
 export default function FlowchartStep({
   projectId,
   canWrite,
@@ -166,22 +69,28 @@ export default function FlowchartStep({
   gate?: string
 }) {
   const { message } = AntApp.useApp()
-  const { dark } = useTheme()
   const [source, setSource] = useState('')
   const [provider, setProvider] = useState('')
   const [loading, setLoading] = useState(true)
-  const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState('')
+  // 分区泳道式 SVG:由后端确定性渲染器产出(services/flowchart_svg.py)
   const [svg, setSvg] = useState('')
-  const [renderError, setRenderError] = useState('')
+  const [svgLoading, setSvgLoading] = useState(false)
+  const [svgError, setSvgError] = useState('')
   const [fullscreen, setFullscreen] = useState(false)
   const [zoom, setZoom] = useState(1)
-  const [viewMode, setViewMode] = useState<'all' | 'module'>('all')
-  const [activeModule, setActiveModule] = useState('')
+  // 固定视口高度:进入页面时按容器位置算一次(并随窗口尺寸变化重算),
+  // 之后缩放只改变图片尺寸、容器高度不变 → 出现横/竖滚动条,而不是把区域撑大或缩小。
+  const [viewH, setViewH] = useState<number | undefined>(undefined)
   const viewRef = useRef<HTMLDivElement | null>(null)
   const modalRef = useRef<HTMLDivElement | null>(null)
-  // 「适配」去重键:同一张图(svg 因主题等重渲染)不重复重置缩放
+  const wrapRef = useRef<HTMLDivElement | null>(null)
+  // 「适配」去重键:同一张图不重复重置缩放
   const lastFitKey = useRef('')
+  // 缩放值的即时镜像:滚轮缩放需要同步读取当前值（state 更新是异步的）
+  const zoomRef = useRef(1)
+  useEffect(() => {
+    zoomRef.current = zoom
+  }, [zoom])
 
   // ---------------------------------------------------------------- 拖动平移
   // 流程图常比容器宽/高,光靠滚动条很难看全 → 支持「按住图面拖动」平移(常规交互)。
@@ -233,28 +142,6 @@ export default function FlowchartStep({
   }
   const svgCls = `flowchart-svg${panning ? ' is-panning' : ''}`
 
-  const parsed = useMemo(() => splitMmdByModule(source), [source])
-  const modules = parsed.modules
-
-  // 未手动选择时,默认选中第一个模块
-  const curModule =
-    modules.find((m) => m.id === activeModule) || (modules.length ? modules[0] : null)
-
-  // 实际参与渲染的 mermaid 源码:全部视图=原源码;模块视图=该模块单独成图
-  const renderSource =
-    viewMode === 'module' && curModule ? moduleMmd(parsed.header, curModule) : source
-
-  // 首次拿到多模块源码时默认进「按模块」视图;之后不再覆盖用户的选择
-  const viewInit = useRef('')
-  useEffect(() => {
-    if (!source) return
-    if (viewInit.current === source) return
-    viewInit.current = source
-    setViewMode(modules.length > 1 ? 'module' : 'all')
-    setActiveModule('')
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [source, modules.length])
-
   async function load() {
     setLoading(true)
     try {
@@ -286,48 +173,98 @@ export default function FlowchartStep({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId])
 
+  // 拉取分区泳道式 SVG(后端自研渲染器,确定性、零 LLM)
   useEffect(() => {
-    // 重新初始化 mermaid,使图表配色跟随当前主题
-    mermaid.initialize({ ...MERMAID_CFG, theme: dark ? 'dark' : 'default' })
-    // 清掉历史失败留下的错误图(可能来自上次失败的渲染 / 之前的页面状态)
-    purgeMermaidStray()
-    if (!renderSource.trim()) {
+    if (!source.trim()) {
       setSvg('')
-      setRenderError('')
+      setSvgError('')
       return
     }
     let alive = true
-    const id = `${MMID_PREFIX}${Date.now()}-${renderSeq++}`
-    ;(async () => {
-      // 1) 先做语法校验:`mermaid.parse` 失败**不会**产生 DOM 残留,
-      //    而 `mermaid.render` 失败会往 body 塞错误图 —— 故先 parse,失败即止。
-      try {
-        await mermaid.parse(renderSource)
-      } catch (e: any) {
-        if (!alive) return
-        setSvg('')
-        setRenderError(String(e?.message || e))
-        purgeMermaidStray(id)
-        return
-      }
-      // 2) 校验通过后再渲染
-      try {
-        const res = await mermaid.render(id, renderSource)
-        if (!alive) return
-        setSvg(sanitizeSvg(res.svg))
-        setRenderError('')
-      } catch (e: any) {
-        if (!alive) return
-        setSvg('')
-        setRenderError(String(e?.message || e))
-        purgeMermaidStray(id)
-      }
-    })()
+    setSvgLoading(true)
+    setSvgError('')
+    fetch(`/api/projects/${projectId}/flowchart/svg`, { credentials: 'include' })
+      .then(async (r) => {
+        if (!r.ok) throw new Error((await r.text()) || `HTTP ${r.status}`)
+        return r.text()
+      })
+      .then((t) => {
+        if (alive) setSvg(sanitizeSvg(t))
+      })
+      .catch((e) => {
+        if (alive) {
+          setSvg('')
+          setSvgError(String(e?.message || e))
+        }
+      })
+      .finally(() => {
+        if (alive) setSvgLoading(false)
+      })
     return () => {
       alive = false
-      purgeMermaidStray(id)
     }
-  }, [renderSource, dark])
+  }, [source, projectId])
+
+  /** 下载流程图 PNG:前端把当前 SVG 栅格化到 canvas 再导出(不依赖后端依赖)。 */
+  async function downloadPng() {
+    const el = (viewRef.current?.querySelector('svg') ||
+      modalRef.current?.querySelector('svg')) as SVGSVGElement | null
+    if (!el) {
+      message.error('暂无可导出的流程图')
+      return
+    }
+    try {
+      const { w, h } = svgNaturalSize(el)
+      const scale = 2
+      const clone = el.cloneNode(true) as SVGSVGElement
+      clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
+      clone.setAttribute('width', String(w))
+      clone.setAttribute('height', String(h))
+      const xml = new XMLSerializer().serializeToString(clone)
+      const url = URL.createObjectURL(new Blob([xml], { type: 'image/svg+xml;charset=utf-8' }))
+      const img = new Image()
+      await new Promise((resolve, reject) => {
+        img.onload = () => resolve(null)
+        img.onerror = () => reject(new Error('SVG 转换失败'))
+        img.src = url
+      })
+      const canvas = document.createElement('canvas')
+      canvas.width = Math.round(w * scale)
+      canvas.height = Math.round(h * scale)
+      const ctx = canvas.getContext('2d')
+      if (!ctx) throw new Error('无法创建画布')
+      ctx.fillStyle = '#ffffff'
+      ctx.fillRect(0, 0, canvas.width, canvas.height)
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+      URL.revokeObjectURL(url)
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'))
+      if (!blob) throw new Error('导出 PNG 失败')
+      const pngUrl = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = pngUrl
+      a.download = '业务流程图.png'
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(pngUrl)
+    } catch (e) {
+      message.error(errMsg(e))
+    }
+  }
+
+  // 固定视口高度:进入页面时量一次容器距视口顶部的位置,算出一个固定高度。
+  useEffect(() => {
+    function measure() {
+      const el = wrapRef.current
+      if (!el) return
+      const top = el.getBoundingClientRect().top
+      const h = Math.max(260, window.innerHeight - top - 24)
+      setViewH(h)
+    }
+    measure()
+    window.addEventListener('resize', measure)
+    return () => window.removeEventListener('resize', measure)
+  }, [loading, gate, source])
 
   // svg / 缩放 / 全屏切换时,把缩放应用到可见容器
   useEffect(() => {
@@ -335,20 +272,49 @@ export default function FlowchartStep({
     if (fullscreen) applyZoom(modalRef.current, zoom)
   }, [svg, zoom, fullscreen])
 
-  // 出图 / 切换模块 / 切换全屏时,自动适配容器宽度。
-  // 依赖含 `svg`:mermaid.render 是异步的,若只依赖 renderSource,effect 会在
-  // 新 svg 尚未就绪(还是旧值/空)时提前返回、之后不再触发 → 永远不自动适配。
-  // 用 fitKey 去重:仅主题切换等"同一张图的重渲染"不重置用户的缩放。
+  // 滚轮缩放:在图上滚动即放大/缩小,并以**鼠标位置为锚点**(缩放后指针下的内容不跑)。
+  // 用原生监听 + passive:false,以便 preventDefault 阻止页面随之滚动。
+  useEffect(() => {
+    const els = [viewRef.current, modalRef.current].filter(Boolean) as HTMLElement[]
+    function onWheel(e: WheelEvent) {
+      const container = e.currentTarget as HTMLElement
+      const el = container.querySelector('svg') as SVGSVGElement | null
+      if (!el) return
+      e.preventDefault()
+      const cur = zoomRef.current
+      const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12
+      const nz = Number(clampZoom(cur * factor).toFixed(2))
+      if (nz === cur) return
+      const rect = container.getBoundingClientRect()
+      const px = e.clientX - rect.left // 指针在视口内的偏移
+      const py = e.clientY - rect.top
+      const cx = (container.scrollLeft + px) / cur // 指针指向的内容坐标
+      const cy = (container.scrollTop + py) / cur
+      const { w, h } = svgNaturalSize(el)
+      // 同步应用尺寸,保证滚动位置按新比例即时计算(不等待 React 重渲染)
+      el.style.width = `${Math.round(w * nz)}px`
+      el.style.height = `${Math.round(h * nz)}px`
+      el.style.maxWidth = 'none'
+      zoomRef.current = nz
+      setZoom(nz)
+      container.scrollLeft = cx * nz - px
+      container.scrollTop = cy * nz - py
+    }
+    els.forEach((el) => el.addEventListener('wheel', onWheel, { passive: false }))
+    return () => els.forEach((el) => el.removeEventListener('wheel', onWheel))
+  }, [fullscreen, source, loading])
+
+  // 出图 / 切换全屏时,自动适配容器宽度(用 fitKey 去重,避免同图重复重置缩放)。
   useEffect(() => {
     if (!svg) return
-    const key = `${renderSource}|${fullscreen}`
+    const key = `${svg.length}|${fullscreen}`
     if (key === lastFitKey.current) return
     lastFitKey.current = key
     setZoom(fitZoom())
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [svg, renderSource, fullscreen])
+  }, [svg, fullscreen])
 
-  // 换图 / 换模块 / 切换全屏时,视图回到左上角(避免停留在上一张图的滚动位置)
+  // 换图 / 切换全屏时,视图回到左上角(避免停留在上一张图的滚动位置)
   useEffect(() => {
     if (viewRef.current) {
       viewRef.current.scrollLeft = 0
@@ -358,14 +324,14 @@ export default function FlowchartStep({
       modalRef.current.scrollLeft = 0
       modalRef.current.scrollTop = 0
     }
-  }, [renderSource, fullscreen])
+  }, [svg, fullscreen])
 
   /** 适配容器宽度(用于「适配」按钮与首次出图)。 */
   function fitZoom(): number {
     const container = fullscreen ? modalRef.current : viewRef.current
-    const svg = container?.querySelector('svg') as SVGSVGElement | null
-    if (!container || !svg) return zoom
-    const { w } = svgNaturalSize(svg)
+    const el = container?.querySelector('svg') as SVGSVGElement | null
+    if (!container || !el) return zoom
+    const { w } = svgNaturalSize(el)
     const avail = container.clientWidth - 8
     if (w <= 0 || avail <= 0) return zoom
     return Number(clampZoom(avail / w).toFixed(2))
@@ -392,36 +358,10 @@ export default function FlowchartStep({
     }
   }
 
-  function startEdit() {
-    setDraft(source)
-    setEditing(true)
-  }
-
-  async function saveEdit() {
-    try {
-      await put(`/api/projects/${projectId}/flowchart`, { mermaid: draft })
-      setSource(draft)
-      setEditing(false)
-      message.success('业务流程图已保存')
-      onGenerated?.()
-    } catch (e) {
-      message.error(errMsg(e))
-    }
-  }
-
-  /** 缩放工具条(普通视图与全屏共用)。 */
+  /** 缩放工具条:竖向浮动按钮组(不占布局空间,浮在图面右上方)。 */
   const zoomBar = (
-    <Space size={4}>
-      <Tooltip title="缩小">
-        <Button
-          size="small"
-          icon={<MinusOutlined />}
-          onClick={() => zoomBy(-ZOOM_STEP)}
-          disabled={zoom <= ZOOM_MIN}
-        />
-      </Tooltip>
-      <span className="flowchart-zoom-pct">{Math.round(zoom * 100)}%</span>
-      <Tooltip title="放大">
+    <div className="flowchart-zoom-group">
+      <Tooltip title="放大" placement="left">
         <Button
           size="small"
           icon={<PlusOutlined />}
@@ -429,13 +369,27 @@ export default function FlowchartStep({
           disabled={zoom >= ZOOM_MAX}
         />
       </Tooltip>
-      <Tooltip title="适配窗口宽度">
+      <span className="flowchart-zoom-pct">{Math.round(zoom * 100)}%</span>
+      <Tooltip title="缩小" placement="left">
+        <Button
+          size="small"
+          icon={<MinusOutlined />}
+          onClick={() => zoomBy(-ZOOM_STEP)}
+          disabled={zoom <= ZOOM_MIN}
+        />
+      </Tooltip>
+      <Tooltip title="适配窗口宽度" placement="left">
         <Button size="small" icon={<CompressOutlined />} onClick={zoomFit} />
       </Tooltip>
-      <Button size="small" onClick={() => zoomTo(1)} disabled={Math.round(zoom * 100) === 100}>
-        100%
-      </Button>
-    </Space>
+      <Tooltip title="实际大小" placement="left">
+        <Button
+          size="small"
+          icon={<OneToOneOutlined />}
+          onClick={() => zoomTo(1)}
+          disabled={Math.round(zoom * 100) === 100}
+        />
+      </Tooltip>
+    </div>
   )
 
   return (
@@ -464,25 +418,17 @@ export default function FlowchartStep({
             刷新
           </Button>
           {source ? (
+            <Button icon={<DownloadOutlined />} onClick={downloadPng}>
+              下载 PNG
+            </Button>
+          ) : null}
+          {source ? (
             <Button
               icon={fullscreen ? <FullscreenExitOutlined /> : <FullscreenOutlined />}
               onClick={() => setFullscreen((v) => !v)}
             >
               {fullscreen ? '退出全屏' : '全屏'}
             </Button>
-          ) : null}
-          {source && !editing ? (
-            <Button icon={<EditOutlined />} disabled={!canWrite || running} onClick={startEdit}>
-              编辑源码
-            </Button>
-          ) : null}
-          {editing ? (
-            <>
-              <Button type="primary" icon={<SaveOutlined />} disabled={running} onClick={saveEdit}>
-                保存
-              </Button>
-              <Button onClick={() => setEditing(false)}>取消</Button>
-            </>
           ) : null}
         </Space>
       }
@@ -502,71 +448,30 @@ export default function FlowchartStep({
         </div>
       ) : source ? (
         <>
-          {renderError ? (
+          {svgError ? (
             <Alert
               type="error"
               showIcon
               style={{ marginBottom: 12 }}
-              message="Mermaid 渲染失败"
-              description={renderError}
+              message="流程图渲染失败"
+              description={svgError}
             />
           ) : null}
-          {editing ? (
-            <Input.TextArea
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              autoSize={{ minRows: 12, maxRows: 24 }}
-              style={{ fontFamily: 'Consolas, Monaco, monospace' }}
+          {svgLoading && !svg ? (
+            <div style={{ textAlign: 'center', padding: 24 }}>
+              <Spin />
+            </div>
+          ) : null}
+          <div className="flowchart-view" ref={wrapRef}>
+            {svg ? <div className="flowchart-zoom-float">{zoomBar}</div> : null}
+            <div
+              className={svgCls}
+              ref={viewRef}
+              style={viewH ? { height: viewH } : undefined}
+              {...panProps}
+              dangerouslySetInnerHTML={{ __html: svg }}
             />
-          ) : (
-            <>
-              {svg ? (
-                <div className="flowchart-toolbar">
-                  {modules.length > 1 ? (
-                    <Space size={4} className="flowchart-mode">
-                      <Segmented
-                        size="small"
-                        value={viewMode}
-                        onChange={(v) => setViewMode(v as 'all' | 'module')}
-                        options={[
-                          { label: '按模块', value: 'module' },
-                          { label: '全部', value: 'all' },
-                        ]}
-                      />
-                      {viewMode === 'module' ? (
-                        <Select
-                          size="small"
-                          style={{ minWidth: 160 }}
-                          value={curModule?.id}
-                          onChange={(v) => setActiveModule(v)}
-                          options={modules.map((m) => ({ value: m.id, label: m.name }))}
-                        />
-                      ) : null}
-                    </Space>
-                  ) : null}
-                  <div style={{ flex: 1 }} />
-                  <span className="flowchart-hint">按住图面可拖动查看</span>
-                  {zoomBar}
-                </div>
-              ) : null}
-              <div
-                className={svgCls}
-                ref={viewRef}
-                title="按住可拖动查看"
-                {...panProps}
-                dangerouslySetInnerHTML={{ __html: svg }}
-              />
-            </>
-          )}
-          <details style={{ marginTop: 12 }}>
-            <summary style={{ cursor: 'pointer', color: 'var(--text-3)' }}>查看 / 复制 Mermaid 源码</summary>
-            <Input.TextArea
-              value={source}
-              readOnly
-              autoSize={{ minRows: 8, maxRows: 20 }}
-              style={{ marginTop: 8, fontFamily: 'Consolas, Monaco, monospace' }}
-            />
-          </details>
+          </div>
         </>
       ) : (
         <Empty description="尚未生成业务流程图">
@@ -589,32 +494,28 @@ export default function FlowchartStep({
         open={fullscreen}
         onCancel={() => setFullscreen(false)}
         footer={null}
-        width="90%"
-        title="业务流程图"
-        styles={{ body: { padding: 16 } }}
+        title={null}
+        closable={false}
+        width="100vw"
+        wrapClassName="h3ac-fs-modal"
+        styles={{ body: { padding: 0 } }}
       >
-        <Space style={{ marginBottom: 12 }} wrap>
-          <Button icon={<FullscreenExitOutlined />} onClick={() => setFullscreen(false)}>
-            退出全屏
-          </Button>
-          {!editing && svg ? zoomBar : null}
-        </Space>
-        <div className="flowchart-fullscreen">
-          {editing ? (
-            <Input.TextArea
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              style={{ height: '100%', fontFamily: 'Consolas, Monaco, monospace' }}
-            />
-          ) : (
-            <div
-              className={svgCls}
-              ref={modalRef}
-              title="按住可拖动查看"
-              {...panProps}
-              dangerouslySetInnerHTML={{ __html: svg }}
-            />
-          )}
+        <div className="h3ac-fs-stage">
+          <div className="h3ac-fs-actions">
+            {svg ? zoomBar : null}
+            <Tooltip title="退出全屏(Esc)">
+              <Button
+                icon={<FullscreenExitOutlined />}
+                onClick={() => setFullscreen(false)}
+              />
+            </Tooltip>
+          </div>
+          <div
+            className={svgCls}
+            ref={modalRef}
+            {...panProps}
+            dangerouslySetInnerHTML={{ __html: svg }}
+          />
         </div>
       </Modal>
     </Card>

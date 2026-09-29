@@ -456,6 +456,8 @@ export interface ProjectMember {
   role: string
   email?: string
   displayName?: string
+  /** 是否为创建者(所有者);所有者置顶显示且不可移除。 */
+  owner?: boolean
 }
 
 export interface CredentialsStatus {
@@ -572,4 +574,10 @@ export function getProjectJobs(
 
 export function getJob<T = any>(jobId: number): Promise<Job<T>> {
   return get(`/api/jobs/${jobId}`)
+}
+
+/** 我可见的**运行中**任务(跨项目):用于刷新后重新发现进度。
+ *  注意:不能用 `/api/jobs`(那是管理员的任务总表),故走 `/api/active-jobs`。 */
+export function getActiveJobs(): Promise<{ items: Job[] }> {
+  return get(`/api/active-jobs`)
 }

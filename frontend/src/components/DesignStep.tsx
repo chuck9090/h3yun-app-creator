@@ -14,6 +14,7 @@ import {
   Table,
   Tabs,
   Tag,
+  Tooltip,
   Typography,
 } from 'antd'
 import {
@@ -722,16 +723,23 @@ export default function DesignStep({
         open={fullscreen}
         onCancel={() => setFullscreen(false)}
         footer={null}
-        width="95%"
-        title="ER 图"
-        styles={{ body: { padding: 12 } }}
+        title={null}
+        closable={false}
+        width="100vw"
+        wrapClassName="h3ac-fs-modal"
+        styles={{ body: { padding: 0 } }}
       >
-        <Space style={{ marginBottom: 12 }}>
-          <Button icon={<FullscreenExitOutlined />} onClick={() => setFullscreen(false)}>
-            退出全屏
-          </Button>
-        </Space>
-        <div style={{ height: 'calc(100vh - 160px)' }}>{flowEl}</div>
+        <div className="h3ac-fs-stage">
+          <div className="h3ac-fs-actions">
+            <Tooltip title="退出全屏(Esc)">
+              <Button
+                icon={<FullscreenExitOutlined />}
+                onClick={() => setFullscreen(false)}
+              />
+            </Tooltip>
+          </div>
+          <div className="h3ac-fs-canvas">{flowEl}</div>
+        </div>
       </Modal>
     </div>
   )

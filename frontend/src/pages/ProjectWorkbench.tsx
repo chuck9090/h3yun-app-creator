@@ -34,7 +34,7 @@ import DeployStep from '../components/DeployStep'
 import ProjectSettingsModal from '../components/ProjectSettingsModal'
 import MembersModal from '../components/MembersModal'
 import BackToTop from '../components/BackToTop'
-import { JobCenter, JobsProvider, jobPct, useJobs } from '../components/JobCenter'
+import { jobKey, jobPct, useJobs } from '../components/JobCenter'
 
 const STEP_KEYS = ['requirement', 'plan', 'flowchart', 'design', 'deploy']
 
@@ -71,14 +71,12 @@ function statusRank(status?: string): number {
 }
 
 export default function ProjectWorkbench({ me }: { me: User }) {
-  const { id } = useParams()
-  // key=id:切换项目时重建 Provider,清空上一个项目的任务进度
+  // 任务进度中心已提升到应用根部(任意页面可见),这里只渲染工作台内容。
   return (
-    <JobsProvider key={id}>
+    <>
       <WorkbenchInner me={me} />
-      <JobCenter />
       <BackToTop />
-    </JobsProvider>
+    </>
   )
 }
 
@@ -172,9 +170,11 @@ function WorkbenchInner({ me }: { me: User }) {
   /** 该阶段任务的进度百分比(运行中的优先),无任务返回 undefined。 */
   const stagePct = (key: string): number | undefined => {
     const kinds = STAGE_JOB_KINDS[key] || []
+    const pid = project?.id
+    if (!pid) return undefined
     let fallback: number | undefined
     for (const k of kinds) {
-      const job = jobs[k]
+      const job = jobs[jobKey(pid, k)]
       if (!job) continue
       const p = jobPct(job)
       if (job.status === 'running') return p ?? 0

@@ -574,6 +574,27 @@ def list_project_jobs(project_id, limit=30, active_only=False):
         c.close()
 
 
+def list_active_jobs(project_ids=None, limit=50):
+    """跨项目列出**运行中**的任务(供前端刷新后重新发现进度)。
+
+    `project_ids=None` 表示不限制(管理员);传空列表则返回空。
+    """
+    c = connect()
+    try:
+        sql = "SELECT * FROM jobs WHERE status='running'"
+        args = []
+        if project_ids is not None:
+            if not project_ids:
+                return []
+            sql += " AND project_id IN (%s)" % ",".join("?" * len(project_ids))
+            args.extend(project_ids)
+        sql += " ORDER BY id DESC LIMIT ?"
+        args.append(limit)
+        return _rows(c.execute(sql, args).fetchall())
+    finally:
+        c.close()
+
+
 def append_job_progress(job_id, text, level="info", pct=None):
     """向任务追加一条进度明细(JSON 数组,保留最近 200 条)。"""
     c = connect()

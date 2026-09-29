@@ -13,7 +13,7 @@
 """
 import json
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 
 from .. import engine_bridge as EB
 from .. import storage
@@ -22,6 +22,7 @@ from ..db import database as db
 from ..schemas import pipeline as S
 from ..services import design as design_service
 from ..services import flowchart as flowchart_service
+from ..services import flowchart_svg as flowchart_svg_service
 from ..services import jobs as jobs_service
 from ..services import llm as llm_service
 from ..services import plan as plan_service
@@ -270,6 +271,34 @@ def put_flowchart(id: int, body: S.FlowchartIn, user=Depends(deps.require_user))
     storage.set_flowchart(p["slug"], body.mermaid)
     db.update_project(p["id"], status="flowcharted")
     return _ok({"mermaid": body.mermaid})
+
+
+@router.get("/projects/{id}/flowchart/svg")
+def get_flowchart_svg(id: int, fmt: str = "svg", user=Depends(deps.require_user)):
+    """把当前业务流程图渲染成**分区泳道式 SVG**(可下载)。
+
+    - `fmt=svg`(默认):返回 image/svg+xml,可直接下载/打开;
+    - `fmt=png`:栅格化为 PNG(需 `pip install cairosvg`,缺失时返回明确提示)。
+    渲染为**确定性**、零 LLM 依赖的纯 Python 实现(见 services/flowchart_svg.py)。
+    """
+    p = deps.get_project(id, user)
+    mmd = storage.get_flowchart(p["slug"])
+    if not (mmd or "").strip():
+        raise HTTPException(400, "尚未生成业务流程图,请先完成「业务流程图」阶段")
+    res = flowchart_svg_service.render_svg(mmd, title="业务流程图")
+    if not res.get("ok"):
+        raise HTTPException(400, res.get("message") or "无法渲染流程图")
+    svg = res["svg"]
+    if str(fmt).lower() == "png":
+        try:
+            import cairosvg
+            png = cairosvg.svg2png(bytestring=svg.encode("utf-8"), scale=2)
+        except Exception as exc:                       # 依赖缺失或栅格化失败
+            raise HTTPException(500, "PNG 导出需要 cairosvg(可 `pip install cairosvg`):%s" % exc)
+        return Response(content=png, media_type="image/png",
+                        headers={"Content-Disposition": 'attachment; filename="flowchart.png"'})
+    return Response(content=svg, media_type="image/svg+xml; charset=utf-8",
+                    headers={"Content-Disposition": 'attachment; filename="flowchart.svg"'})
 
 
 # ---------------------------------------------------------------- ER / 设计

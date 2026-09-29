@@ -22,6 +22,7 @@ import Library from './pages/Library'
 import Settings from './pages/Settings'
 import Users from './pages/Users'
 import ThemeToggle from './components/ThemeToggle'
+import { JobCenter, JobsProvider } from './components/JobCenter'
 import { useTheme } from './theme/ThemeContext'
 
 export default function App() {
@@ -54,7 +55,13 @@ export default function App() {
     )
   }
 
-  return <MainLayout me={me} setMe={setMe} />
+  // 任务进度中心挂在应用根部:任意页面都能看到生成进度(状态与轮询跨页面持续)
+  return (
+    <JobsProvider>
+      <MainLayout me={me} setMe={setMe} />
+      <JobCenter />
+    </JobsProvider>
+  )
 }
 
 function MainLayout({ me, setMe }: { me: User; setMe: (u: User | null) => void }) {

@@ -118,17 +118,20 @@ export default function MembersModal({
             title: '项目角色',
             dataIndex: 'role',
             width: 120,
-            render: (r: string) => (
-              <Tag color={r === 'designer' ? 'blue' : 'default'}>
-                {r === 'designer' ? '可编辑' : '只读'}
-              </Tag>
-            ),
+            render: (r: string, m) =>
+              m.owner || r === 'owner' ? (
+                <Tag color="gold">所有者</Tag>
+              ) : (
+                <Tag color={r === 'designer' ? 'blue' : 'default'}>
+                  {r === 'designer' ? '可编辑' : '只读'}
+                </Tag>
+              ),
           },
           {
             title: '',
             width: 80,
             render: (_, m) =>
-              canManage ? (
+              canManage && !m.owner && m.role !== 'owner' ? (
                 <Popconfirm title="移除该成员?" onConfirm={() => remove(m.userId)}>
                   <a>移除</a>
                 </Popconfirm>

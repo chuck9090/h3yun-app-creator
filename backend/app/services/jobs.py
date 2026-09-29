@@ -72,6 +72,12 @@ def project_jobs(project_id, limit=30, active_only=False):
     return [job_public(j) for j in db.list_project_jobs(project_id, limit, active_only)]
 
 
+def active_jobs(project_ids=None, limit=50):
+    """跨项目列出运行中任务(前端刷新后据此恢复进度显示)。"""
+    db.reap_stale_jobs(ttl_minutes=C.JOB_TIMEOUT_MIN)
+    return [job_public(j) for j in db.list_active_jobs(project_ids, limit)]
+
+
 def submit(project_id, user_id, kind, runner, title=None, variant=""):
     """创建并后台执行任务;返回 (job_public, created)。
 
