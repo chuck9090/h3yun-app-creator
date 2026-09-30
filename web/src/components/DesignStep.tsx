@@ -27,6 +27,7 @@ import {
   SaveOutlined,
 } from '@ant-design/icons'
 import AutomationEditor from './AutomationEditor'
+import AiRefinePanel from './AiRefinePanel'
 import GroupsEditor from './GroupsEditor'
 import {
   Background,
@@ -741,6 +742,18 @@ export default function DesignStep({
           <div className="h3ac-fs-canvas">{flowEl}</div>
         </div>
       </Modal>
+
+      <AiRefinePanel
+        projectId={projectId}
+        stage="design"
+        canWrite={canWrite}
+        disabled={!sheets.length}
+        stageLabel="ER 结构"
+        onApplied={() => {
+          load()
+          runCheck()
+        }}
+      />
     </div>
   )
 }

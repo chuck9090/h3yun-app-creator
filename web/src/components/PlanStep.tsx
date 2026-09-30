@@ -13,6 +13,7 @@ import MDEditor from '@uiw/react-md-editor'
 import { errMsg, get, post, put } from '../api/client'
 import { useJob } from '../hooks/useJob'
 import { useTheme } from '../theme/ThemeContext'
+import AiRefinePanel from './AiRefinePanel'
 
 /** 目录项(由正文标题收集而来)。 */
 interface TocItem {
@@ -180,8 +181,9 @@ export default function PlanStep({
   }
 
   return (
-    <Card
-      title={
+    <>
+      <Card
+        title={
         <Space>
           <span>系统设计方案</span>
           {provider ? <Tag color={provider === 'llm' ? 'green' : 'orange'}>{provider}</Tag> : null}
@@ -279,6 +281,15 @@ export default function PlanStep({
           </Button>
         </Empty>
       )}
-    </Card>
+      </Card>
+      <AiRefinePanel
+        projectId={projectId}
+        stage="plan"
+        canWrite={canWrite}
+        disabled={!markdown || editing}
+        stageLabel="系统设计方案"
+        onApplied={load}
+      />
+    </>
   )
 }

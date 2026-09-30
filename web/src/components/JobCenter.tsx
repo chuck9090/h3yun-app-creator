@@ -14,11 +14,23 @@ import { getActiveJobs, getJob, Job } from '../api/client'
 import JobProgressPanel from './JobProgressPanel'
 
 /** 任务类型(与后端 kind 对应)的展示名与排序。 */
-export const JOB_KIND_ORDER = ['plan', 'flowchart', 'design', 'deploy', 'verify']
+export const JOB_KIND_ORDER = [
+  'plan',
+  'plan_refine',
+  'flowchart',
+  'flowchart_refine',
+  'design',
+  'design_refine',
+  'deploy',
+  'verify',
+]
 export const JOB_KIND_LABEL: Record<string, string> = {
   plan: '方案',
+  plan_refine: '方案微调',
   flowchart: '业务流程图',
+  flowchart_refine: '流程图微调',
   design: 'ER 设计',
+  design_refine: 'ER 微调',
   deploy: '生成应用',
   verify: '回读核对',
 }

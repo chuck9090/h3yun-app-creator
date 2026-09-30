@@ -241,3 +241,47 @@ def generate_plan(requirement_text: str, reference_text: str = "",
     else:
         _p("未配置大模型,使用启发式知识库生成草案", pct=78, level="warning")
     return {"markdown": _heuristic_plan(requirement_text), "provider": "heuristic"}
+
+
+# ---------------------------------------------------------------- AI 微调(对话式)
+_REFINE_SYSTEM = """你是《系统设计方案》的**编辑**(不是重写者)。用户会给出一份**已有的方案(Markdown)**
+以及一条**修改指令**。你的任务:在**保持原方案整体结构、章节与措辞**的前提下,
+**只落实用户明确要求的那处改动**,其余内容**逐字原样保留**。
+
+硬性要求:
+1. 输出仍是**完整的**方案 Markdown(不是差异片段、不是解释),沿用原有标题层级
+   (H1=模块、H2=表单,其下用阿拉伯数字逐项列「业务内容」);
+2. **只改用户提到的地方**;未被提及的模块/表单/字段/规则/关系/论述**逐字不变**
+   (连标点、编号、换行都尽量保持原样);
+3. 不得新增用户未要求的模块/表单/字段;不得删除用户未要求删除的内容;
+4. 不出现字段英文编码(key)、不写界面配置(与客户可交付格式一致);
+5. 只输出 Markdown 正文,不要寒暄、不要代码块围栏。"""
+
+
+def _refine_user_prompt(current_md, instruction):
+    return ("【当前系统设计方案(完整原文)】\n%s\n\n"
+            "【用户的修改指令(只落实这一条,其余原样保留)】\n%s\n\n"
+            "请输出修改后的**完整方案**。"
+            % (current_md or "(空)", (instruction or "").strip()))
+
+
+def refine_plan(current_md: str, instruction: str, progress=None, provider=None) -> dict:
+    """在**现有方案**基础上按用户指令做最小改动(覆盖式微调)。
+
+    与 generate_plan 的区别:生成=从需求从零产出;微调=对既有全文做定点编辑。
+    需已配置大模型(微调依赖对自然语言指令的理解,启发式无法胜任)。
+    """
+    def _p(msg, pct=None, level="info"):
+        if progress:
+            progress(msg, pct=pct, level=level)
+
+    provider = provider or llm.get_provider()
+    if not getattr(provider, "available", False):
+        raise RuntimeError("AI 微调需先配置大模型(见「系统设置」)")
+    _p("组装微调提示词", pct=35)
+    raw = provider.complete(_REFINE_SYSTEM, _refine_user_prompt(current_md, instruction))
+    _p("解析模型输出", pct=88)
+    md = _strip_fence(raw)
+    if not md or len(md) < 20:
+        raise RuntimeError("模型返回内容为空,未作改动")
+    return {"markdown": md, "provider": provider.name}

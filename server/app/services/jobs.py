@@ -24,6 +24,20 @@ from ..db import database as db
 _executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="h3-job")
 _lock = threading.Lock()
 
+# 每项目一把锁:同一项目的所有后台任务**串行执行**,避免「生成」与「微调」等不同 kind
+# 并发写同一阶段产物(plan.md / design.json / sheets/)导致的丢更新与新旧混合。
+_proj_locks = {}
+_proj_locks_guard = threading.Lock()
+
+
+def _project_lock(project_id):
+    with _proj_locks_guard:
+        lk = _proj_locks.get(project_id)
+        if lk is None:
+            lk = threading.Lock()
+            _proj_locks[project_id] = lk
+        return lk
+
 
 class JobConflict(Exception):
     """同项目同 kind 已有 running 任务,但本次请求参数(variant)不同。"""
@@ -35,6 +49,9 @@ KIND_TITLES = {
     "design": "生成 ER 结构",
     "deploy": "生成氚云应用",
     "verify": "回读核对",
+    "plan_refine": "AI 微调:系统设计方案",
+    "flowchart_refine": "AI 微调:业务流程图",
+    "design_refine": "AI 微调:ER 结构",
 }
 
 
@@ -103,7 +120,10 @@ def submit(project_id, user_id, kind, runner, title=None, variant=""):
 
     def _run():
         try:
-            payload = runner(_progress)
+            # 同项目任务串行:防止不同 kind(如 plan 与 plan_refine、design_refine 与 deploy)
+            # 并发写同一阶段文件造成丢更新/新旧混合。
+            with _project_lock(project_id):
+                payload = runner(_progress)
             detail = ""
             if isinstance(payload, dict):
                 detail = str(payload.pop("_detail", "") or "")[:2000]

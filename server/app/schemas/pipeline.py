@@ -37,6 +37,17 @@ class GenerateIn(BaseModel):
     instruction: Optional[str] = None
 
 
+class RefineIn(BaseModel):
+    """AI 对话式微调:针对当前阶段产物的一条自然语言指令。"""
+    instruction: str = Field(..., min_length=1, max_length=2000)
+
+
+class HistoryRestoreIn(BaseModel):
+    """回滚某阶段到指定历史快照。stage ∈ plan|flowchart|design。"""
+    stage: str = Field(..., pattern="^(plan|flowchart|design)$")
+    id: str = Field(..., min_length=1)
+
+
 class LLMSettingsIn(BaseModel):
     baseUrl: str = ""
     apiKey: str = ""

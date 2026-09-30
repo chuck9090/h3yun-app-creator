@@ -13,6 +13,7 @@
 """
 from . import llm
 from .context import REFERENCE_GUARD, is_report_entity
+import json
 
 _SYSTEM = """你是氚云低代码平台的表单设计器。请依据**两份材料**输出每张业务表的完整字段结构
 **以及表单之间的自动化(触发器)**:
@@ -110,11 +111,11 @@ def _user_prompt(plan_markdown, flowchart_mmd="", reference_text=""):
     return "\n\n".join(parts)
 
 
-def _clean(design):
-    """清洗设计;失败返回 None。"""
+def _clean(design, frozen_keys=None):
+    """清洗设计;失败返回 None。frozen_keys=线上已建表单(其字段编码原样保留)。"""
     from h3service.design import clean_design
     try:
-        out = clean_design(design)
+        out = clean_design(design, frozen_keys=frozen_keys)
     except Exception:
         return None
     return out if out.get("sheets") else None
@@ -202,3 +203,115 @@ def generate_design(plan_markdown: str, flowchart_mmd: str = "",
         _p("已排除 %d 张看板/报表(不建表、不进应用)" % dropped, pct=92, level="info")
     cleaned["provider"] = used
     return cleaned
+
+
+# ---------------------------------------------------------------- AI 微调(对话式)
+_REFINE_SYSTEM = """你是氚云 ER 结构(JSON)的**编辑**。用户会给出一份**已有的**设计 JSON
+({sheets,dicts,groups,automations})以及一条修改指令。在保持原有整体结构的前提下,
+**只落实用户要求的改动**,其余**原样保留**。只输出严格 JSON(结构与原文一致),不要任何解释或代码块围栏。
+
+【最重要的硬性规则(违反会被程序拒绝,原内容保持不变)】
+1. **已有表的 `key`(表单 key)、字段的 `key`、子表的 `key`、子表列的 `key` 一律不得改名、不得删除** ——
+   只能修改字段的 `label`(显示名)、控件 `type`、`dict`/`options`/`decimal`/`required` 等属性;
+2. 允许的操作:**新增**字段/子表/表/自动化;修改字段显示名与配置;调整 `groups` 顺序;
+   **新增** `dicts` 条目或修改其选项。**不允许删除**任何已有表/字段/子表/自动化(删除请让用户在界面手动做);
+3. 新增表/字段/自动化时,其 `key` 仍须遵守命名硬规则(见下);
+4. **不得改动用户未提及的表、字段、自动化**(尤其不要"顺手"重命名或重排)。
+
+【key 命名硬规则】只含英文字母与数字、必须字母开头;避开平台保留字
+(ObjectId/Name/CreatedBy/OwnerId/OwnerDeptId/CreatedTime/ModifiedTime/Status/State/SeqNo/
+ParentObjectId/ParentPropertyName/ParentIndex/ValueIndex/PropertyValue)
+与 MySQL 保留字(status/order/group/key/desc/rank/select/from/where/index/range/date/time 等)。
+
+【结构字段(与原文一致)】每个 sheet:`key,title,nameSchema,useOwner,group,layout,controls[]`;
+control:`type,key,label`(按类型另有 dict/options/decimal/assoc/columns 等);
+automation:`key,title,form,trigger,sortKey,when[],actions[]`。"""
+
+
+def _refine_user_prompt(current_design, instruction, plan_markdown="", flowchart_mmd=""):
+    parts = ["【当前 ER 结构(JSON 原文)】\n%s"
+             % json.dumps(current_design, ensure_ascii=False, indent=1)]
+    if (plan_markdown or "").strip():
+        parts.append("【系统设计方案(口径参照,勿据此大改)】\n%s" % plan_markdown.strip())
+    if (flowchart_mmd or "").strip():
+        parts.append("【业务流程图(判断是否需新增自动化时参照)】\n```mermaid\n%s\n```"
+                     % flowchart_mmd.strip())
+    parts.append("【用户的修改指令(只落实这一条,其余原样保留;已有 key 不得改名)】\n%s"
+                 % (instruction or "").strip())
+    parts.append("请输出修改后的**完整设计 JSON**。")
+    return "\n\n".join(parts)
+
+
+def _design_keys(d):
+    """收集结构里的全部**既有编码**:表 key、字段 key、子表列 key、自动化 key。"""
+    tables, fields, autos = set(), set(), set()
+    for s in d.get("sheets") or []:
+        sk = s.get("key")
+        if sk:
+            tables.add(sk)
+        for c in s.get("controls") or []:
+            ck = c.get("key")
+            if sk and ck:
+                fields.add("%s.%s" % (sk, ck))
+            if c.get("type") == "subtable":
+                for col in c.get("columns") or []:
+                    if sk and ck and col.get("key"):
+                        fields.add("%s.%s.%s" % (sk, ck, col.get("key")))
+    for a in d.get("automations") or []:
+        if a.get("key"):
+            autos.add(a["key"])
+    return tables, fields, autos
+
+
+def _key_violations(old, new):
+    """检出:旧结构里的编码在新结果中消失(被改名或删除)——生成类编码不得变动。"""
+    ot, of, oa = _design_keys(old)
+    nt, nf, na = _design_keys(new)
+    out = ["表 %s" % k for k in sorted(ot - nt)]
+    out += ["字段 %s" % k for k in sorted(of - nf)]
+    out += ["自动化 %s" % k for k in sorted(oa - na)]
+    return out
+
+
+_DELETE_HINT = "如需删除已有表/字段/自动化,请在「ER 设计」编辑器里手动操作"
+
+
+def refine_design(current_design: dict, instruction: str, plan_markdown: str = "",
+                  flowchart_mmd: str = "", progress=None, provider=None,
+                  frozen_keys=None) -> dict:
+    """在**现有 ER 结构**基础上按用户指令做最小改动(覆盖式微调;已有 key 冻结)。
+
+    需已配置大模型;产出经 clean_design 清洗与合法性兜底。
+    **硬约束(不可绕过)**:若 AI 结果使任何**已有**表/字段/子表列/自动化编码消失
+    (无论改名还是删除),一律**拒绝采用**并抛错,原内容保持不变。
+    AI 只能:改显示名/控件配置、新增字段/表/自动化;删除请用 ER 编辑器手动做。
+    """
+    def _p(msg, pct=None, level="info"):
+        if progress:
+            progress(msg, pct=pct, level=level)
+
+    provider = provider or llm.get_provider()
+    if not getattr(provider, "available", False):
+        raise RuntimeError("AI 微调需先配置大模型(见「系统设置」)")
+    frozen = set(frozen_keys or ())
+    # 用**同一冻结集**清洗前后结构 → "无改动则编码一致",据此判定是否被改动
+    old_c = _clean(current_design, frozen) or current_design
+    _p("组装微调提示词", pct=40)
+    raw = provider.complete(
+        _REFINE_SYSTEM,
+        _refine_user_prompt(current_design, instruction, plan_markdown, flowchart_mmd),
+        json_mode=True)
+    _p("解析并清洗模型输出", pct=90)
+    new_c = _clean(llm.extract_json(raw), frozen)
+    if not new_c:
+        raise RuntimeError("模型产出的 ER 结构不合法,未作改动")
+    new_c = _strip_reports(new_c)
+    # ★ 硬守卫:已有编码(表/字段/子表列/自动化)不得消失 —— 一律拒绝,不区分意图
+    viol = _key_violations(old_c, new_c)
+    if viol:
+        raise RuntimeError(
+            "AI 微调改动了已有结构编码(表/字段/子表列/自动化):%s —— 已拒绝,原内容保持不变。"
+            "生成类编码一旦变更会导致线上另起列/丢数据;AI 微调只允许改显示名、改控件配置、"
+            "新增字段/表/自动化。%s。" % ("、".join(viol[:8]), _DELETE_HINT))
+    new_c["provider"] = provider.name
+    return new_c

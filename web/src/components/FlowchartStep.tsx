@@ -16,6 +16,7 @@ import {
 import DOMPurify from 'dompurify'
 import { errMsg, get, post } from '../api/client'
 import { useJob } from '../hooks/useJob'
+import AiRefinePanel from './AiRefinePanel'
 
 /** 对后端渲染的 SVG 再做一次白名单净化(XSS 纵深防御)。 */
 function sanitizeSvg(svg: string): string {
@@ -393,7 +394,8 @@ export default function FlowchartStep({
   )
 
   return (
-    <Card
+    <>
+      <Card
       title={
         <Space>
           <span>业务流程图</span>
@@ -518,6 +520,15 @@ export default function FlowchartStep({
           />
         </div>
       </Modal>
-    </Card>
+      </Card>
+      <AiRefinePanel
+        projectId={projectId}
+        stage="flowchart"
+        canWrite={canWrite}
+        disabled={!source}
+        stageLabel="业务流程图"
+        onApplied={load}
+      />
+    </>
   )
 }

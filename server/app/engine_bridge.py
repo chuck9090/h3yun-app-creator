@@ -117,6 +117,19 @@ def read_sheets_design(slug: str) -> dict:
     return ENGINE_DESIGN.read_design(slug)
 
 
+def frozen_keys(slug: str) -> set:
+    """线上**已建**(registry created:true)的表单 key 集合。
+
+    这些表的字段/子表列编码已固定,清洗时须原样保留(改名=另起一列、丢数据)。
+    AI 微调需要**同一冻结集**清洗前后结构,才能正确判定"编码是否被改动"。
+    """
+    try:
+        reg = ENGINE.load_registry(slug) or {}
+    except Exception:
+        return set()
+    return {k for k, v in reg.items() if isinstance(v, dict) and v.get("created")}
+
+
 def er_graph(slug: str, app_code: str = "") -> dict:
     return ENGINE.er_graph(slug, app_code=app_code or None)
 

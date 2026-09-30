@@ -102,7 +102,7 @@ events         id, project_id, kind, message, created_at
 降级(保留 `designed`),失败详情由任务 `jobs.error` 与 `events` 承载;因此部署失败后仍可重试,
 工作台门禁不会把用户锁死。前端 `statusRank` 另对历史 `failed` 值兜底按 `designed` 处理。
 
-## 4. 项目工作区(文件,`data/projects/<slug>/`)
+## 4. 项目工作区(文件,`server/data/projects/<slug>/`)
 
 ```
 plan.md             系统设计方案(markdown,AI 生成/用户编辑)
@@ -113,6 +113,8 @@ uploads/            原始上传文件
 sheets/*.json       部署时由 design.json 生成(引擎消费)
 automations/*.json  部署时由 design.json.automations 生成(引擎消费,一条一文件,文件名=key)
 registry.json       引擎建表编码注册表
+.history/<stage>/   版本快照(生成/AI 微调/保存/回滚各存一份;每阶段保留最近 30 条)
+.stages.json        各阶段上游内容指纹(下游过期 stale 判定)
 ```
 
 ### 4.1 自动化定义(design.json.automations[])
@@ -218,6 +220,27 @@ POST     /api/projects/{id}/verify                  → data:{job,created}   (�
 GET      /api/projects/{id}/credentials/status      → data:{configured,appCode,hasToken,tokenValid,tokenExpired,engineCode}
 POST     /api/projects/{id}/preview                 {sheet} → data:{payload:{SchemaStr,BizSheetStr,ControlSettingsStr}}
 ```
+
+### AI 微调(对话式)· 版本历史
+对已产出的**方案 / 业务流程图 / ER** 各支持一句自然语言指令的**最小改动**(覆盖式微调):
+```
+POST     /api/projects/{id}/plan/refine       {instruction} → data:{job,created}   (异步任务;需配置大模型)
+POST     /api/projects/{id}/flowchart/refine  {instruction} → data:{job,created}
+POST     /api/projects/{id}/design/refine     {instruction} → data:{job,created}
+GET      /api/projects/{id}/stages             → data:{plan:{at,stale},flowchart:{at,stale},design:{at,stale}}
+GET      /api/projects/{id}/history?stage=plan|flowchart|design
+                                               → data:{items:[{id,at,origin,instruction,provider,bytes}]}
+POST     /api/projects/{id}/history/restore    {stage,id} → data:{stage,stages}
+```
+- `refine` 与 `generate` 是**独立的 kind**(`plan_refine`/`flowchart_refine`/`design_refine`),幂等锁各自独立;
+  **未配置大模型时返回 400**(微调依赖对自然语言的理解,不回退启发式)。
+- 每个环节**只改自己的产物**;生成 / 微调 / 手动保存 / 回滚都会写一份**版本快照**
+  (`projects/<slug>/.history/<stage>/`,仅保留最近 30 条),可经 `history/restore` 回滚。
+- **过期(stale)判定**:按内容指纹记录各阶段的上游依赖(流程图←方案;ER←方案+流程图),存
+  `projects/<slug>/.stages.json`;上游内容变化即把下游标记 `stale:true`,前端提示**重新生成**
+  (不自动级联,保持人工闸门)。
+- 微调约束:**ER 微调禁止改动已有表的字段/子表/表单 key**(只允许改显示名/类型/选项、增删字段),
+  产出仍经 `clean_design` 清洗与 `check` 校验。
 
 #### 异步任务(生成 / 核对)
 `plan|flowchart|design|deploy|verify` 均为**后台异步任务**,POST 立即返回 `{job, created}`:

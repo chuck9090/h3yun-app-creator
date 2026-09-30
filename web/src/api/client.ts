@@ -581,3 +581,58 @@ export function getJob<T = any>(jobId: number): Promise<Job<T>> {
 export function getActiveJobs(): Promise<{ items: Job[] }> {
   return get(`/api/active-jobs`)
 }
+
+/* ------------------------------------------------------------------ AI 微调 / 版本历史 */
+
+export type StageName = 'plan' | 'flowchart' | 'design'
+
+export interface StageStatus {
+  /** 该阶段产物最后更新时间(空=尚未产出)。 */
+  at: string
+  /** 上游内容已变化 → 该阶段产物过期,建议重新生成。 */
+  stale: boolean
+}
+
+export type StagesInfo = Record<StageName, StageStatus>
+
+export interface StageHistoryItem {
+  id: string
+  at: string
+  /** generate | refine | edit | restore */
+  origin: string
+  /** AI 微调时的用户指令(其他来源为空)。 */
+  instruction: string
+  provider: string
+  bytes: number
+}
+
+/** 对某阶段产物做一次 AI 对话式微调(异步任务;需已配置大模型)。 */
+export function refineStage(
+  projectId: number,
+  stage: StageName,
+  instruction: string,
+): Promise<JobStartResponse> {
+  return post(`/api/projects/${projectId}/${stage}/refine`, { instruction })
+}
+
+/** 某阶段的历史版本列表(最新在前),供回滚。 */
+export function getStageHistory(
+  projectId: number,
+  stage: StageName,
+): Promise<{ items: StageHistoryItem[] }> {
+  return get(`/api/projects/${projectId}/history`, { params: { stage } })
+}
+
+/** 回滚某阶段到指定历史版本。 */
+export function restoreStage(
+  projectId: number,
+  stage: StageName,
+  id: string,
+): Promise<{ stage: string; stages: StagesInfo }> {
+  return post(`/api/projects/${projectId}/history/restore`, { stage, id })
+}
+
+/** 各阶段状态(是否因上游变化而过期)。 */
+export function getStages(projectId: number): Promise<StagesInfo> {
+  return get(`/api/projects/${projectId}/stages`)
+}

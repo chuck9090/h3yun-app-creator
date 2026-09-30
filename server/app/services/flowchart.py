@@ -288,3 +288,50 @@ def generate_flowchart(plan_markdown: str) -> dict:
     fn, fe = flow_stats(fallback)
     return {"mermaid": fallback, "provider": "heuristic",
             "nodes": fn, "edges": fe, "dense": False}
+
+
+# ---------------------------------------------------------------- AI 微调(对话式)
+_REFINE_SYSTEM = """你是业务流程图(Mermaid)的**编辑**。用户会给出一张**已有的** `flowchart` 源码
+以及一条修改指令。在保持原有结构(模块 subgraph、节点、边、标注)的前提下,
+**只落实用户要求的改动**,其余**逐字保留**。
+
+硬性要求:
+1. 只输出 Mermaid 源码,图类型必须是 `flowchart LR`(或 `graph LR`),不要任何解释;
+2. **只改用户提到的地方**;未提及的模块/节点/边/标注**逐字不变**;
+3. 节点仍是**业务表单名**(不出现表编码/key);保持「模块 subgraph + direction TB」的分区形态;
+4. 不得引入用户未要求的表单/模块;不得删除用户未要求删除的内容;
+5. 控制规模:边数不要显著增加(避免变成蜘蛛网);确需新增流转才加边。"""
+
+
+def _refine_user_prompt(current_mmd, instruction, plan_markdown=""):
+    parts = ["【当前业务流程图(Mermaid 源码)】\n```mermaid\n%s\n```"
+             % (current_mmd or "").strip()]
+    if (plan_markdown or "").strip():
+        parts.append("【系统设计方案(仅供保持表单/流程命名口径一致,勿据此大改)】\n%s"
+                     % plan_markdown.strip())
+    parts.append("【用户的修改指令(只落实这一条,其余原样保留)】\n%s" % (instruction or "").strip())
+    parts.append("请输出修改后的**完整 Mermaid 源码**。")
+    return "\n\n".join(parts)
+
+
+def refine_flowchart(current_mmd: str, instruction: str, plan_markdown: str = "",
+                     progress=None, provider=None) -> dict:
+    """在**现有流程图**基础上按用户指令做最小改动(覆盖式微调)。
+
+    需已配置大模型;产出仍会做合法性校验(非法则不采用并报错)。
+    """
+    def _p(msg, pct=None, level="info"):
+        if progress:
+            progress(msg, pct=pct, level=level)
+
+    provider = provider or llm.get_provider()
+    if not getattr(provider, "available", False):
+        raise RuntimeError("AI 微调需先配置大模型(见「系统设置」)")
+    _p("组装微调提示词", pct=35)
+    raw = provider.complete(_REFINE_SYSTEM, _refine_user_prompt(current_mmd, instruction, plan_markdown))
+    _p("解析并校验 Mermaid", pct=88)
+    mmd = _extract_mermaid(raw)
+    if not _valid(mmd):
+        raise RuntimeError("模型产出的流程图不合法,未作改动")
+    nodes, edges = flow_stats(mmd)
+    return {"mermaid": mmd, "provider": provider.name, "nodes": nodes, "edges": edges, "dense": False}

@@ -186,6 +186,9 @@ def generate_plan(id: int, body: S.GenerateIn = None, user=Depends(deps.require_
                                          progress=progress, provider=provider)
         progress("保存方案(provider=%s)" % res.get("provider"), pct=95)
         storage.set_plan(slug, res["markdown"])
+        storage.record_snapshot(slug, "plan", res["markdown"], origin="generate",
+                                provider=res.get("provider"))
+        storage.set_stage(slug, "plan")
         # 方案是后续「业务流程图 / ER」的**唯一依据** → 校验它是否完整覆盖需求清单的表单
         try:
             from ..services import flowchart as fc
@@ -219,6 +222,8 @@ def generate_plan(id: int, body: S.GenerateIn = None, user=Depends(deps.require_
 def put_plan(id: int, body: S.PlanIn, user=Depends(deps.require_user)):
     p = deps.get_project(id, user, write=True)
     storage.set_plan(p["slug"], body.markdown)
+    storage.record_snapshot(p["slug"], "plan", body.markdown, origin="edit")
+    storage.set_stage(p["slug"], "plan")
     db.update_project(p["id"], status="planned")
     return _ok({"markdown": body.markdown})
 
@@ -255,6 +260,9 @@ def generate_flowchart(id: int, body: S.GenerateIn = None, user=Depends(deps.req
                      % (ds.get("nodes", 0), ds.get("edges", 0)), pct=88, level="warning")
         progress("流程图生成完成(provider=%s,%s),正在保存" % (res.get("provider"), stats), pct=90)
         storage.set_flowchart(slug, res["mermaid"])
+        storage.record_snapshot(slug, "flowchart", res["mermaid"], origin="generate",
+                                provider=res.get("provider"))
+        storage.set_stage(slug, "flowchart", src=storage.stage_src(slug, "flowchart"))
         db.update_project(pid, status="flowcharted")
         db.add_event(pid, "flowchart", "生成业务流程图(provider=%s)" % res.get("provider"))
         return {"mermaid": res["mermaid"], "provider": res.get("provider", "heuristic"),
@@ -269,6 +277,8 @@ def generate_flowchart(id: int, body: S.GenerateIn = None, user=Depends(deps.req
 def put_flowchart(id: int, body: S.FlowchartIn, user=Depends(deps.require_user)):
     p = deps.get_project(id, user, write=True)
     storage.set_flowchart(p["slug"], body.mermaid)
+    storage.record_snapshot(p["slug"], "flowchart", body.mermaid, origin="edit")
+    storage.set_stage(p["slug"], "flowchart", src=storage.stage_src(p["slug"], "flowchart"))
     db.update_project(p["id"], status="flowcharted")
     return _ok({"mermaid": body.mermaid})
 
@@ -334,6 +344,9 @@ def generate_design(id: int, body: S.GenerateIn = None, user=Depends(deps.requir
         progress("落盘表单/自动化定义并做离线校验(%d 张表)" % len(design["sheets"]), pct=94)
         design, check, error = _sync(slug, app_code, design)
         storage.set_design(slug, design)
+        storage.record_snapshot(slug, "design", design, origin="generate",
+                                provider=res.get("provider"))
+        storage.set_stage(slug, "design", src=storage.stage_src(slug, "design"))
         db.update_project(pid, status="designed")
         db.add_event(pid, "design",
                      "生成 ER 结构(provider=%s, %d 表/%d 自动化)"
@@ -354,6 +367,8 @@ def put_design(id: int, body: S.DesignIn, user=Depends(deps.require_user)):
     design, check, error = _sync(p["slug"], p.get("app_code", ""), body.model_dump())
     # 存**清洗后**的 design(与 sheets/ 一致),避免编辑器所见与引擎所建分叉
     storage.set_design(p["slug"], design)
+    storage.record_snapshot(p["slug"], "design", design, origin="edit")
+    storage.set_stage(p["slug"], "design", src=storage.stage_src(p["slug"], "design"))
     db.update_project(p["id"], status="designed")
     return _ok(_design_payload(design, "user", check, error))
 
@@ -381,3 +396,171 @@ def design_er(id: int, user=Depends(deps.require_user)):
         return _ok(EB.er_graph(p["slug"], app_code=p.get("app_code", "")))
     except Exception as e:
         return _ok({"project": p["slug"], "nodes": [], "edges": [], "error": str(e)})
+
+
+# ---------------------------------------------------------------- AI 微调(对话式)
+def _require_llm():
+    """微调依赖对自然语言指令的理解,必须已配置大模型(启发式无法胜任)。"""
+    if not llm_service.get_provider().available:
+        raise HTTPException(400, "AI 微调需先在「系统设置」配置大模型")
+
+
+@router.post("/projects/{id}/plan/refine")
+def refine_plan(id: int, body: S.RefineIn, user=Depends(deps.require_user)):
+    p = deps.get_project(id, user, write=True)
+    _require_llm()
+    slug, pid = p["slug"], p["id"]
+    if not (storage.get_plan(slug) or "").strip():
+        raise HTTPException(400, "尚未生成系统设计方案")
+
+    def runner(progress):
+        progress("读取当前方案", pct=15)
+        current = storage.get_plan(slug)          # 任务执行时重读,确保用最新内容
+        res = plan_service.refine_plan(current, body.instruction, progress=progress)
+        new_md = res["markdown"]
+        # 改动摘要:方案里的表单集合变化(可见地暴露 AI 是否越界)
+        added, removed = [], []
+        try:
+            from ..services import flowchart as fc
+            old_f = [f for _, fs in fc._plan_structure(current, exclude_reports=False) for f in fs]
+            new_f = [f for _, fs in fc._plan_structure(new_md, exclude_reports=False) for f in fs]
+            added = [x for x in new_f if x not in old_f]
+            removed = [x for x in old_f if x not in new_f]
+        except Exception:
+            pass
+        if removed:
+            progress("注意:微调后有 %d 个表单从方案中消失(%s);如非本意请回滚"
+                     % (len(removed), "、".join(removed[:8])), pct=94, level="warning")
+        progress("保存微调后的方案", pct=96)
+        storage.set_plan(slug, new_md)            # 只写本阶段文件(plan.md)
+        storage.record_snapshot(slug, "plan", new_md, origin="refine",
+                                instruction=body.instruction, provider=res.get("provider"))
+        storage.set_stage(slug, "plan")
+        db.add_event(pid, "plan", "AI 微调方案")
+        parts = []
+        if added:
+            parts.append("新增表单:%s" % "、".join(added[:8]))
+        if removed:
+            parts.append("移除表单:%s" % "、".join(removed[:8]))
+        detail = "已微调方案" + ("(" + ";".join(parts) + ")" if parts else "(未增删表单)")
+        return {"markdown": new_md, "provider": res.get("provider"),
+                "changeSummary": {"addedForms": added, "removedForms": removed},
+                "_detail": detail}
+
+    job, created = jobs_service.submit(pid, user["id"], "plan_refine", runner)
+    return _ok({"job": job, "created": created})
+
+
+@router.post("/projects/{id}/flowchart/refine")
+def refine_flowchart(id: int, body: S.RefineIn, user=Depends(deps.require_user)):
+    p = deps.get_project(id, user, write=True)
+    _require_llm()
+    slug, pid = p["slug"], p["id"]
+    if not (storage.get_flowchart(slug) or "").strip():
+        raise HTTPException(400, "尚未生成业务流程图")
+
+    def runner(progress):
+        progress("读取当前流程图与方案", pct=15)
+        current = storage.get_flowchart(slug)      # 任务执行时重读
+        plan_md = storage.get_plan(slug)
+        old_nodes, old_edges = flowchart_service.flow_stats(current)
+        res = flowchart_service.refine_flowchart(current, body.instruction, plan_md,
+                                                 progress=progress)
+        storage.set_flowchart(slug, res["mermaid"])  # 只写本阶段文件(flowchart.mmd)
+        storage.record_snapshot(slug, "flowchart", res["mermaid"], origin="refine",
+                                instruction=body.instruction, provider=res.get("provider"))
+        storage.set_stage(slug, "flowchart", src=storage.stage_src(slug, "flowchart"))
+        db.add_event(pid, "flowchart", "AI 微调业务流程图")
+        return {"mermaid": res["mermaid"], "provider": res.get("provider"),
+                "nodes": res.get("nodes", 0), "edges": res.get("edges", 0),
+                "_detail": "已微调流程图(节点 %d→%d,边 %d→%d)"
+                           % (old_nodes, res.get("nodes", 0),
+                              old_edges, res.get("edges", 0))}
+
+    job, created = jobs_service.submit(pid, user["id"], "flowchart_refine", runner)
+    return _ok({"job": job, "created": created})
+
+
+@router.post("/projects/{id}/design/refine")
+def refine_design(id: int, body: S.RefineIn, user=Depends(deps.require_user)):
+    p = deps.get_project(id, user, write=True)
+    _require_llm()
+    slug, pid = p["slug"], p["id"]
+    if not (storage.get_design(slug).get("sheets") or []):
+        raise HTTPException(400, "尚未生成 ER 结构")
+
+    def runner(progress):
+        progress("读取当前 ER 结构与来源", pct=15)
+        current = storage.get_design(slug)         # 任务执行时重读
+        plan_md = storage.get_plan(slug)
+        mmd = storage.get_flowchart(slug)
+        res = design_service.refine_design(current, body.instruction, plan_md, mmd,
+                                           progress=progress,
+                                           frozen_keys=EB.frozen_keys(slug))
+        design = {"sheets": res.get("sheets") or [],
+                  "dicts": res.get("dicts") or {},
+                  "groups": res.get("groups") or [],
+                  "automations": res.get("automations") or []}
+        progress("落盘表单/自动化定义并做离线校验(%d 张表)" % len(design["sheets"]), pct=94)
+        design, check, error = _sync(slug, p.get("app_code", ""), design)
+        storage.set_design(slug, design)           # 只写本阶段文件(design.json + 派生 sheets/automations)
+        storage.record_snapshot(slug, "design", design, origin="refine",
+                                instruction=body.instruction, provider=res.get("provider"))
+        storage.set_stage(slug, "design", src=storage.stage_src(slug, "design"))
+        db.add_event(pid, "design", "AI 微调 ER 结构")
+        payload = _design_payload(design, res.get("provider"), check, error)
+        payload["_detail"] = "已微调 ER 结构(%d 表/%d 自动化)" % (
+            len(design["sheets"]), len(design.get("automations") or []))
+        return payload
+
+    job, created = jobs_service.submit(pid, user["id"], "design_refine", runner)
+    return _ok({"job": job, "created": created})
+
+
+# ---------------------------------------------------------------- 历史 / 阶段状态
+@router.get("/projects/{id}/history")
+def get_history(id: int, stage: str, user=Depends(deps.require_user)):
+    """某阶段的历史版本列表(最新在前),供回滚。"""
+    p = deps.get_project(id, user)
+    if stage not in storage.STAGES:
+        raise HTTPException(400, "未知阶段 %r" % stage)
+    return _ok({"items": storage.list_history(p["slug"], stage)})
+
+
+@router.post("/projects/{id}/history/restore")
+def restore_history(id: int, body: S.HistoryRestoreIn, user=Depends(deps.require_user)):
+    """把某阶段回滚到指定历史版本(回滚本身也记一条历史)。"""
+    p = deps.get_project(id, user, write=True)
+    slug, pid = p["slug"], p["id"]
+    text = storage.read_snapshot(slug, body.stage, body.id)
+    if text is None:
+        raise HTTPException(404, "历史版本不存在")
+    if body.stage == "plan":
+        storage.set_plan(slug, text)
+        storage.record_snapshot(slug, "plan", text, origin="restore")
+        storage.set_stage(slug, "plan")
+        db.update_project(pid, status="planned")
+    elif body.stage == "flowchart":
+        storage.set_flowchart(slug, text)
+        storage.record_snapshot(slug, "flowchart", text, origin="restore")
+        storage.set_stage(slug, "flowchart", src=storage.stage_src(slug, "flowchart"))
+        db.update_project(pid, status="flowcharted")
+    else:
+        try:
+            design = json.loads(text)
+        except Exception:
+            raise HTTPException(400, "历史版本内容损坏,无法回滚")
+        design, check, error = _sync(slug, p.get("app_code", ""), design)
+        storage.set_design(slug, design)
+        storage.record_snapshot(slug, "design", design, origin="restore")
+        storage.set_stage(slug, "design", src=storage.stage_src(slug, "design"))
+        db.update_project(pid, status="designed")
+    db.add_event(pid, body.stage, "回滚到历史版本")
+    return _ok({"stage": body.stage, "stages": storage.get_stages(slug)})
+
+
+@router.get("/projects/{id}/stages")
+def get_stages(id: int, user=Depends(deps.require_user)):
+    """各阶段状态:是否已有产物 + 是否因上游变化而过期(stale)。"""
+    p = deps.get_project(id, user)
+    return _ok(storage.get_stages(p["slug"]))
