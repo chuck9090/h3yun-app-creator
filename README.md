@@ -10,17 +10,17 @@
 前后端分离 + 工程化,用户**不需要填写或上传任何配置文件**。
 
 ```
-浏览器 ──(httpOnly Cookie 会话)──▶ 前端 frontend/(React+TS+AntD,8991)
+浏览器 ──(httpOnly Cookie 会话)──▶ 前端 web/(React+TS+AntD,8991)
                                         │  /api 代理
                                         ▼
-                                 后端 backend/(FastAPI,8990)
+                                 后端 server/(FastAPI,8990)
                                    ├─ 账号/权限 · 项目 · 文档 · 资料库 · 任务
                                    ├─ AI 编排(方案 md / 业务流程图 / ER)
-                                   └─ 引擎桥接(调用根目录 h3*)
+                                   └─ 引擎桥接(调用 server/ 下 h3*)
                                         ▼
-                    引擎 h3design/h3platform/h3verify/h3service
-                                        ▼
-                    data/projects/<slug>/  ←→  氚云线上应用
+                    引擎 server/h3design · h3platform · h3verify · h3service
+                                         ▼
+                    server/data/projects/<slug>/  ←→  氚云线上应用
 ```
 
 > 默认端口:后端 **8990**、前端 **8991**(可用 `-BackendPort` / `-FrontendPort` 改)。
@@ -63,42 +63,43 @@ pwsh -File start.ps1          # 后端 8990 + 前端 8991(自动装依赖;已占
 
 ```
 h3yun-app-creator/
-├─ frontend/              独立前端工程(React 18 + TS + Vite + AntD + React Flow)
+├─ web/              独立前端工程(React 18 + TS + Vite + AntD + React Flow)
 │                         页面:登录/项目/工作台/资料库/设置/用户;主题切换、左侧导航可折叠、
 │                         方案页左侧目录、回到顶部;任务进度中心全局挂载(任意页面可见、
 │                         刷新后自动恢复,可收起为右下角悬浮图标,阶段标题显示百分比)
-├─ backend/               独立后端工程(FastAPI + 原生 sqlite3)
+├─ server/               独立后端工程(FastAPI + 原生 sqlite3)
 │   ├─ app/core/          配置 · 安全(Cookie/JWT/凭据加密) · 依赖(RBAC)
 │   ├─ app/db/            SQLite 仓储
 │   ├─ app/api/           路由:auth/users/projects/documents/library/pipeline/deploy/jobs/settings/system
 │   ├─ app/services/      服务:llm/plan/flowchart/flowchart_svg(确定性 SVG 渲染)/design/
 │   │                     parsing/extract/context/library/nightly/jobs
 │   ├─ app/engine_bridge.py   引擎桥接(凭据注入/落盘/校验/部署)
-│   └─ tests/             API · 流水线 · 上下文 · 抽取 · 资料库 · 安全 · 自动化 · 真实服务冒烟
-├─ h3design/              控件工厂 · SaveForm 载荷 · JSON DSL · 自动化 DSL · 知识库编译器
-├─ h3platform/            连接层:Console SaveForm/LoadForm + Automatic SaveTrigger(个人身份授权)
-├─ h3verify/              表单/自动化只读回读比对
-├─ h3service/             引擎 service 层 + AI 启发式 + 知识库编译
-├─ docs/                  ARCHITECTURE.md(契约) · web_platform.md(部署) · schema_doc.md(DSL)
-│                         design_assistant.md(设计 SOP) · knowledge.md · platform_gotchas.md
-├─ fixtures/              氚云载荷实证基准(**开发资产**,生成逻辑逐字对照;见 fixtures/README.md)
-├─ start.ps1              一键启动(前后端双进程;端口占用检测,默认不启热重载)
-└─ data/                  **运行数据目录**(gitignore;可用 H3AC_DATA_DIR 覆盖)
-                           ├─ h3yun-app-creator.db         用户/项目/文档索引/设置/任务
-                           ├─ secret.key           服务端密钥(会话/凭据加密)
-                           ├─ uploads/             上传原件
-                           ├─ projects/<slug>/     项目工作区(定义/方案/流程图/ER/需求)
-                           ├─ library/uploads/     全局资料库上传件(全用户共享,夜间整理)
-                           └─ knowledge/           设计知识库产物(语料全部来自用户资料)
+│   ├─ tests/             API · 流水线 · 上下文 · 抽取 · 资料库 · 安全 · 自动化 · 真实服务冒烟
+│   ├─ h3design/          控件工厂 · SaveForm 载荷 · JSON DSL · 自动化 DSL · 知识库编译器
+│   ├─ h3platform/        连接层:Console SaveForm/LoadForm + Automatic SaveTrigger(个人身份授权)
+│   ├─ h3verify/          表单/自动化只读回读比对
+│   ├─ h3service/         引擎 service 层 + AI 启发式 + 知识库编译
+│   └─ data/              **运行数据目录**(gitignore;可用 H3AC_DATA_DIR 覆盖)
+│                          ├─ h3yun-app-creator.db  用户/项目/文档索引/设置/任务
+│                          ├─ secret.key            服务端密钥(会话/凭据加密)
+│                          ├─ uploads/              上传原件
+│                          ├─ projects/<slug>/      项目工作区(定义/方案/流程图/ER/需求)
+│                          ├─ library/uploads/      全局资料库上传件(全用户共享,夜间整理)
+│                          └─ knowledge/            设计知识库产物(语料全部来自用户资料)
+├─ dev/                   开发与维护资产(非运行代码,不被程序读取)
+│   ├─ docs/              architecture.md(契约) · web_platform.md(部署) · schema_doc.md(DSL)
+│   │                     design_assistant.md(设计 SOP) · knowledge.md · platform_gotchas.md · deploy.md
+│   └─ fixtures/          氚云载荷实证基准(生成逻辑逐字对照;见 dev/fixtures/README.md)
+└─ start.ps1              一键启动(前后端双进程;端口占用检测,默认不启热重载)
 ```
 
-> **代码与数据分离**:仓库内**只有代码**(无内置样本、无凭据)。所有运行数据都在 `data/`,
+> **代码与数据分离**:仓库内**只有代码**(无内置样本、无凭据)。所有运行数据都在 `server/data/`,
 > 首次运行自动创建。
 
 ## 关键设计
 
 - **前后端分离**:两个独立工程、独立依赖、独立启动;开发期 Vite 代理 `/api`,生产期 nginx 同源反代。
-- **代码与数据分离**:仓库只含代码;运行数据(DB/上传件/密钥/项目工作区/知识库产物)统一在 `data/`。
+- **代码与数据分离**:仓库只含代码;运行数据(DB/上传件/密钥/项目工作区/知识库产物)统一在 `server/data/`。
 - **会话安全**:httpOnly Cookie + 自签 JWT;凭据(h3_token)加密存库,接口**绝不回显**。
 - **凭据安全**:每个项目独立凭据;Web 端**绝不回落到运行目录 config**(否则会误建到别的应用)。
 - **人机闸门**:AI 只产出方案/流程图/ER 草案;**「生成氚云应用」是一次显式点击**,且发布前必经引擎 `check` 校验。
@@ -134,17 +135,18 @@ h3yun-app-creator/
 
 | 文件 | 内容 |
 |---|---|
-| `docs/ARCHITECTURE.md` | **接口契约**(前后端/引擎三方),改接口先改这里 |
-| `docs/web_platform.md` | 部署与运维(开发/生产/环境变量/备份) |
-| `docs/schema_doc.md` | 表单 JSON DSL 完整格式(控件类型/key 规则/子表/公式/联动/自动化) |
-| `docs/design_assistant.md` | 粗需求 → 设计的 SOP(模块与表单草案/漏项自检/覆盖检查) |
-| `docs/knowledge.md` | 设计知识库(资料来源=用户项目) |
-| `docs/platform_gotchas.md` | 氚云平台坑位(实证记录) |
+| `dev/docs/architecture.md` | **接口契约**(前后端/引擎三方),改接口先改这里 |
+| `dev/docs/deploy.md` | **服务器部署手册**(Linux systemd+Nginx / Windows NSSM+IIS,含 HTTPS、备份、验收) |
+| `dev/docs/web_platform.md` | 部署与运维(开发/生产/环境变量/备份) |
+| `dev/docs/schema_doc.md` | 表单 JSON DSL 完整格式(控件类型/key 规则/子表/公式/联动/自动化) |
+| `dev/docs/design_assistant.md` | 粗需求 → 设计的 SOP(模块与表单草案/漏项自检/覆盖检查) |
+| `dev/docs/knowledge.md` | 设计知识库(资料来源=用户项目) |
+| `dev/docs/platform_gotchas.md` | 氚云平台坑位(实证记录) |
 
 ## 测试
 
 ```powershell
-# 后端(cwd=backend/)
+# 后端(cwd=server/)
 python -X utf8 tests/test_core_api.py        # 认证/用户/项目/文档
 python -X utf8 tests/test_pipeline_api.py    # 需求→方案→流程图→ER→部署
 python -X utf8 tests/test_automations.py     # 自动化全链路 + 分组计划 + 设计清洗安全(路径穿越)
@@ -154,7 +156,7 @@ python -X utf8 tests/test_extract.py         # 文档结构化抽取:表格/合�
 python -X utf8 tests/test_library.py         # 资料库:重名/权限/删除刷新/library.md
 python -X utf8 tests/smoke_real_server.py    # 真实端口 + Cookie 冒烟
 
-# 前端(cwd=frontend/)
+# 前端(cwd=web/)
 npm run typecheck && npm run build:only
 ```
 

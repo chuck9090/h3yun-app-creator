@@ -1,5 +1,5 @@
 # 运行数据目录(代码与数据分离):DB / 上传件 / 密钥 / 项目工作区 / 知识库产物
-data/
+server/data/
 
 # Python
 __pycache__/

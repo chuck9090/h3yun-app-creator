@@ -37,14 +37,14 @@ function Ensure-BackendDeps {
     python -X utf8 -c "import fastapi, uvicorn, httpx, openpyxl, docx, pypdf" 2>$null
     if ($LASTEXITCODE -ne 0) {
         Write-Host "安装后端依赖 ..." -ForegroundColor Yellow
-        python -X utf8 -m pip install -r "$root\backend\requirements.txt" --index-url https://pypi.org/simple
+        python -X utf8 -m pip install -r "$root\server\requirements.txt" --index-url https://pypi.org/simple
     }
 }
 
 function Ensure-FrontendDeps {
-    if (-not (Test-Path -LiteralPath "$root\frontend\node_modules")) {
+    if (-not (Test-Path -LiteralPath "$root\web\node_modules")) {
         Write-Host "安装前端依赖 ..." -ForegroundColor Yellow
-        Push-Location -LiteralPath "$root\frontend"
+        Push-Location -LiteralPath "$root\web"
         try { npm install --no-audit --no-fund } finally { Pop-Location }
     }
 }
@@ -57,12 +57,12 @@ if (($startFrontend -or $Prod) -and -not $SkipInstall) { Ensure-FrontendDeps }
 
 # 生产:构建前端静态产物(dist/ 由 nginx 或任意静态服务器托管;本脚本仅构建)
 if ($Prod) {
-    Push-Location -LiteralPath "$root\frontend"
+    Push-Location -LiteralPath "$root\web"
     try {
         Write-Host "构建前端 ..." -ForegroundColor Yellow
         npm run build:only
     } finally { Pop-Location }
-    Write-Host "前端已构建到 frontend\dist\ —— 用 nginx 托管,并把 /api 反代到后端。" -ForegroundColor Green
+    Write-Host "前端已构建到 web\dist\ —— 用 nginx 托管,并把 /api 反代到后端。" -ForegroundColor Green
     if (-not $startBackend) { exit 0 }
 }
 
@@ -84,13 +84,13 @@ if ($startBackend) {
             Write-Host "未设置 H3AC_ADMIN_PASSWORD:首次访问前端将引导你创建管理员。" -ForegroundColor Yellow
         }
         Write-Host "启动后端: http://localhost:$BackendPort" -ForegroundColor Green
-        $backendArgs = @("-X", "utf8", "-m", "uvicorn", "app.main:app",
+        $serverArgs = @("-X", "utf8", "-m", "uvicorn", "app.main:app",
                          "--host", "localhost", "--port", "$BackendPort")
         # 默认不启 --reload:热重载会再 spawn 子进程,和后台任务/迁移并发时加剧 SQLite 锁竞争。
         # 需要开发热重载时显式加 -Reload。
-        if ($Reload) { $backendArgs += "--reload" }
-        $procs += Start-Process python -PassThru -WorkingDirectory "$root\backend" `
-            -ArgumentList $backendArgs
+        if ($Reload) { $serverArgs += "--reload" }
+        $procs += Start-Process python -PassThru -WorkingDirectory "$root\server" `
+            -ArgumentList $serverArgs
     }
 }
 
@@ -104,7 +104,7 @@ if ($startFrontend) {
         # 把后端端口传给前端 dev server:vite.config.ts 的 /api 代理据此定位后端,
         # 避免端口写死(改了 -BackendPort 后代理仍指向旧端口导致「连不上后端」)。
         $env:H3AC_BACKEND_PORT = "$BackendPort"
-        $procs += Start-Process npm.cmd -PassThru -WorkingDirectory "$root\frontend" `
+        $procs += Start-Process npm.cmd -PassThru -WorkingDirectory "$root\web" `
             -ArgumentList @("run", "dev", "--", "--port", "$FrontendPort")
     }
 }
