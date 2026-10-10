@@ -736,7 +736,7 @@ body {
 .back-to-top {
   position: fixed;
   right: 26px;
-  bottom: 128px;
+  bottom: 108px; /* 右下角自下而上:任务进度(30)→ 回到顶部(108)→ AI 微调(166) */
   z-index: 900;
   width: 46px;
   height: 46px;
@@ -1425,10 +1425,109 @@ body {
   }
 }
 
-/* ----------------------------------------------------------- AI 微调对话面板 */
+/* ----------------------------------------------------------- AI 微调悬浮按钮 */
+
+.ai-fab {
+  position: fixed;
+  right: 26px;
+  bottom: 166px; /* 右下角最上层;下方依次为「回到顶部」(108)、「生成进度」(30) */
+  z-index: 950;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+}
+
+.ai-fab-btn {
+  width: 52px !important;
+  height: 52px !important;
+  font-size: 22px !important;
+  color: #fff !important;
+  border: none !important;
+  background: linear-gradient(135deg, #5b6ff0 0%, #22c3d6 100%) !important;
+  box-shadow: 0 6px 18px rgba(91, 111, 240, 0.42) !important;
+  transition: transform 0.18s var(--ease), box-shadow 0.18s var(--ease);
+}
+
+.ai-fab-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 26px rgba(91, 111, 240, 0.55) !important;
+}
+
+.ai-fab-btn:disabled {
+  opacity: 0.5;
+}
+
+/* 上游已更新:渐变转橙红提示 */
+.ai-fab-btn.is-stale:not(.is-thinking) {
+  background: linear-gradient(135deg, #f0a24b 0%, #f06b6b 100%) !important;
+}
+
+/* AI 思考中:按钮呼吸脉冲 + 图标灵动跳跃 */
+.ai-fab-btn.is-thinking {
+  animation: ai-fab-pulse 1.4s var(--ease) infinite;
+}
+
+.ai-fab-btn.is-thinking .anticon {
+  animation: ai-hop 0.9s var(--ease) infinite;
+  transform-origin: center;
+}
+
+@keyframes ai-hop {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+  25% {
+    transform: translateY(-4px) scale(1.08);
+  }
+  50% {
+    transform: translateY(0) scale(1);
+  }
+  75% {
+    transform: translateY(-2px) scale(1.04);
+  }
+}
+
+@keyframes ai-fab-pulse {
+  0% {
+    box-shadow: 0 6px 18px rgba(91, 111, 240, 0.42), 0 0 0 0 rgba(34, 195, 214, 0.55);
+  }
+  100% {
+    box-shadow: 0 6px 18px rgba(91, 111, 240, 0.42), 0 0 0 14px rgba(34, 195, 214, 0);
+  }
+}
+
+.ai-fab-hint {
+  font-size: 11px;
+  line-height: 1.2;
+  color: var(--text-3);
+  background: rgba(127, 127, 127, 0.14);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1px 6px;
+  white-space: nowrap;
+}
+
+/* ----------------------------------------------------------- AI 微调对话弹窗 */
+
+.ai-refine-modal {
+  display: flex;
+  flex-direction: column;
+  height: min(60vh, 560px);
+}
+
+.ai-refine-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
 
 .ai-refine-log {
-  max-height: 260px;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -1465,4 +1564,117 @@ body {
 
 .ai-refine-input .ant-input {
   flex: 1;
+}
+
+/* agent 式执行轨迹:逐步展示 AI 的动作 */
+.ai-round {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ai-round-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ai-round-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.ai-round-time {
+  flex: none;
+  font-size: 11px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.ai-agent {
+  align-self: flex-start;
+  max-width: 94%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 10px;
+  border-left: 2px solid var(--primary);
+  background: rgba(91, 111, 240, 0.06);
+  border-radius: 6px;
+}
+
+.ai-agent-note {
+  font-size: 12px;
+  color: var(--text-3);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.ai-step {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.ai-step-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-3);
+  transform: translateY(-1px);
+}
+
+.ai-step-dot.is-success {
+  background: #22c55e;
+}
+
+.ai-step-dot.is-warning {
+  background: #f0a24b;
+}
+
+.ai-step-dot.is-error {
+  background: #ef4444;
+}
+
+.ai-step-text {
+  flex: 1;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.ai-step-pct {
+  flex: none;
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.ai-agent-result {
+  font-size: 12.5px;
+  color: #22c55e;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  align-items: flex-start;
+}
+
+.ai-agent-changes {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.ai-agent-error {
+  font-size: 12.5px;
+  color: #ef4444;
+  display: flex;
+  gap: 5px;
+  align-items: baseline;
 }

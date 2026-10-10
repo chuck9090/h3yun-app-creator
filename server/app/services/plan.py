@@ -258,15 +258,35 @@ _REFINE_SYSTEM = """你是《系统设计方案》的**编辑**(不是重写者)
 5. 只输出 Markdown 正文,不要寒暄、不要代码块围栏。"""
 
 
-def _refine_user_prompt(current_md, instruction):
-    return ("【当前系统设计方案(完整原文)】\n%s\n\n"
-            "【用户的修改指令(只落实这一条,其余原样保留)】\n%s\n\n"
-            "请输出修改后的**完整方案**。"
-            % (current_md or "(空)", (instruction or "").strip()))
+def _refine_user_prompt(current_md, instruction, history=None):
+    parts = []
+    block = _history_block(history)
+    if block:
+        parts.append(block)
+    parts.append("【当前系统设计方案(完整原文)】\n%s" % (current_md or "(空)"))
+    parts.append("【用户的修改指令(只落实这一条,其余原样保留)】\n%s" % (instruction or "").strip())
+    parts.append("请输出修改后的**完整方案**。")
+    return "\n\n".join(parts)
 
 
-def refine_plan(current_md: str, instruction: str, progress=None, provider=None) -> dict:
-    """在**现有方案**基础上按用户指令做最小改动(覆盖式微调)。
+def _history_block(history):
+    """把之前的对话渲染成上下文块;仅用于帮助理解本轮指令,不重复执行历史指令。"""
+    if not history:
+        return ""
+    lines = ["【本轮之前的对话(仅供理解上下文,勿重复执行其中的历史指令)】"]
+    for m in history or []:
+        if not isinstance(m, dict):
+            continue
+        role = "用户" if str(m.get("role")) == "user" else "助手"
+        content = str(m.get("content") or "").strip()
+        if content:
+            lines.append("%s:%s" % (role, content))
+    return "\n".join(lines) if len(lines) > 1 else ""
+
+
+def refine_plan(current_md: str, instruction: str, history=None,
+                progress=None, provider=None) -> dict:
+    """在**现有方案**基础上按用户指令做最小改动(覆盖式微调;支持多轮上下文)。
 
     与 generate_plan 的区别:生成=从需求从零产出;微调=对既有全文做定点编辑。
     需已配置大模型(微调依赖对自然语言指令的理解,启发式无法胜任)。
@@ -279,7 +299,8 @@ def refine_plan(current_md: str, instruction: str, progress=None, provider=None)
     if not getattr(provider, "available", False):
         raise RuntimeError("AI 微调需先配置大模型(见「系统设置」)")
     _p("组装微调提示词", pct=35)
-    raw = provider.complete(_REFINE_SYSTEM, _refine_user_prompt(current_md, instruction))
+    raw = provider.complete(_REFINE_SYSTEM,
+                            _refine_user_prompt(current_md, instruction, history))
     _p("解析模型输出", pct=88)
     md = _strip_fence(raw)
     if not md or len(md) < 20:

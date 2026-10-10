@@ -224,14 +224,16 @@ POST     /api/projects/{id}/preview                 {sheet} → data:{payload:{S
 ### AI 微调(对话式)· 版本历史
 对已产出的**方案 / 业务流程图 / ER** 各支持一句自然语言指令的**最小改动**(覆盖式微调):
 ```
-POST     /api/projects/{id}/plan/refine       {instruction} → data:{job,created}   (异步任务;需配置大模型)
-POST     /api/projects/{id}/flowchart/refine  {instruction} → data:{job,created}
-POST     /api/projects/{id}/design/refine     {instruction} → data:{job,created}
+POST     /api/projects/{id}/plan/refine       {instruction,history?} → data:{job,created}   (异步任务;需配置大模型)
+POST     /api/projects/{id}/flowchart/refine  {instruction,history?} → data:{job,created}
+POST     /api/projects/{id}/design/refine     {instruction,history?} → data:{job,created}
 GET      /api/projects/{id}/stages             → data:{plan:{at,stale},flowchart:{at,stale},design:{at,stale}}
 GET      /api/projects/{id}/history?stage=plan|flowchart|design
                                                → data:{items:[{id,at,origin,instruction,provider,bytes}]}
 POST     /api/projects/{id}/history/restore    {stage,id} → data:{stage,stages}
 ```
+- `history` = 之前的对话 `[{role:user|assistant, content}]`,用于**多轮上下文**(仅帮助理解本轮指令,不重复执行);
+  任务 `result.summary` 为模型对本轮改动生成的一句话标题(供对话记录展示)。
 - `refine` 与 `generate` 是**独立的 kind**(`plan_refine`/`flowchart_refine`/`design_refine`),幂等锁各自独立;
   **未配置大模型时返回 400**(微调依赖对自然语言的理解,不回退启发式)。
 - 每个环节**只改自己的产物**;生成 / 微调 / 手动保存 / 回滚都会写一份**版本快照**

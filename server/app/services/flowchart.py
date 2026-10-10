@@ -303,9 +303,14 @@ _REFINE_SYSTEM = """你是业务流程图(Mermaid)的**编辑**。用户会给�
 5. 控制规模:边数不要显著增加(避免变成蜘蛛网);确需新增流转才加边。"""
 
 
-def _refine_user_prompt(current_mmd, instruction, plan_markdown=""):
-    parts = ["【当前业务流程图(Mermaid 源码)】\n```mermaid\n%s\n```"
-             % (current_mmd or "").strip()]
+def _refine_user_prompt(current_mmd, instruction, plan_markdown="", history=None):
+    from .plan import _history_block
+    parts = []
+    block = _history_block(history)
+    if block:
+        parts.append(block)
+    parts.append("【当前业务流程图(Mermaid 源码)】\n```mermaid\n%s\n```"
+                 % (current_mmd or "").strip())
     if (plan_markdown or "").strip():
         parts.append("【系统设计方案(仅供保持表单/流程命名口径一致,勿据此大改)】\n%s"
                      % plan_markdown.strip())
@@ -315,8 +320,8 @@ def _refine_user_prompt(current_mmd, instruction, plan_markdown=""):
 
 
 def refine_flowchart(current_mmd: str, instruction: str, plan_markdown: str = "",
-                     progress=None, provider=None) -> dict:
-    """在**现有流程图**基础上按用户指令做最小改动(覆盖式微调)。
+                     history=None, progress=None, provider=None) -> dict:
+    """在**现有流程图**基础上按用户指令做最小改动(覆盖式微调;支持多轮上下文)。
 
     需已配置大模型;产出仍会做合法性校验(非法则不采用并报错)。
     """
@@ -328,7 +333,9 @@ def refine_flowchart(current_mmd: str, instruction: str, plan_markdown: str = ""
     if not getattr(provider, "available", False):
         raise RuntimeError("AI 微调需先配置大模型(见「系统设置」)")
     _p("组装微调提示词", pct=35)
-    raw = provider.complete(_REFINE_SYSTEM, _refine_user_prompt(current_mmd, instruction, plan_markdown))
+    raw = provider.complete(
+        _REFINE_SYSTEM,
+        _refine_user_prompt(current_mmd, instruction, plan_markdown, history))
     _p("解析并校验 Mermaid", pct=88)
     mmd = _extract_mermaid(raw)
     if not _valid(mmd):

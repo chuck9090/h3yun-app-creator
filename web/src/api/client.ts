@@ -606,13 +606,21 @@ export interface StageHistoryItem {
   bytes: number
 }
 
-/** 对某阶段产物做一次 AI 对话式微调(异步任务;需已配置大模型)。 */
+/** AI 微调的历史对话项(仅作上下文,不重复执行)。 */
+export interface RefineHistoryItem {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+/** 对某阶段产物做一次 AI 对话式微调(异步任务;需已配置大模型)。
+ *  history 传入之前的对话,让 AI 理解多轮上下文。 */
 export function refineStage(
   projectId: number,
   stage: StageName,
   instruction: string,
+  history: RefineHistoryItem[] = [],
 ): Promise<JobStartResponse> {
-  return post(`/api/projects/${projectId}/${stage}/refine`, { instruction })
+  return post(`/api/projects/${projectId}/${stage}/refine`, { instruction, history })
 }
 
 /** 某阶段的历史版本列表(最新在前),供回滚。 */

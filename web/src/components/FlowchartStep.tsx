@@ -16,7 +16,7 @@ import {
 import DOMPurify from 'dompurify'
 import { errMsg, get, post } from '../api/client'
 import { useJob } from '../hooks/useJob'
-import AiRefinePanel from './AiRefinePanel'
+import AiRefinePanel, { AiAssistHandle } from './AiRefinePanel'
 
 /** 对后端渲染的 SVG 再做一次白名单净化(XSS 纵深防御)。 */
 function sanitizeSvg(svg: string): string {
@@ -97,6 +97,7 @@ export default function FlowchartStep({
   // 流程图常比容器宽/高,光靠滚动条很难看全 → 支持「按住图面拖动」平移(常规交互)。
   const [panning, setPanning] = useState(false)
   const pan = useRef({ active: false, x: 0, y: 0, sl: 0, st: 0 })
+  const assistantRef = useRef<AiAssistHandle>(null)
 
   function panDown(e: RPointerEvent<HTMLDivElement>) {
     if (e.button !== 0) return // 仅左键
@@ -353,6 +354,7 @@ export default function FlowchartStep({
 
   async function generate() {
     try {
+      assistantRef.current?.open()
       await start(() => post(`/api/projects/${projectId}/flowchart/generate`, {}))
     } catch (e) {
       message.error(errMsg(e))
@@ -394,8 +396,7 @@ export default function FlowchartStep({
   )
 
   return (
-    <>
-      <Card
+    <Card
       title={
         <Space>
           <span>业务流程图</span>
@@ -520,8 +521,8 @@ export default function FlowchartStep({
           />
         </div>
       </Modal>
-      </Card>
       <AiRefinePanel
+        ref={assistantRef}
         projectId={projectId}
         stage="flowchart"
         canWrite={canWrite}
@@ -529,6 +530,6 @@ export default function FlowchartStep({
         stageLabel="业务流程图"
         onApplied={load}
       />
-    </>
+    </Card>
   )
 }

@@ -150,11 +150,15 @@ export function JobCenter() {
 
   const list = useMemo(
     () =>
-      Object.values(jobs).sort(
-        (a, b) =>
-          JOB_KIND_ORDER.indexOf(a.kind) - JOB_KIND_ORDER.indexOf(b.kind) ||
-          a.id - b.id,
-      ),
+      Object.values(jobs)
+        // 方案/业务流程图/ER 的**生成**与**AI 微调**进度统一在「AI 助手」对话框里展示,
+        // 不进此进度侧栏;此处只保留部署、回读核对等非 AI 任务的进度。
+        .filter((j) => j.kind === 'deploy' || j.kind === 'verify')
+        .sort(
+          (a, b) =>
+            JOB_KIND_ORDER.indexOf(a.kind) - JOB_KIND_ORDER.indexOf(b.kind) ||
+            a.id - b.id,
+        ),
     [jobs],
   )
   const running = list.filter((j) => j.status === 'running')

@@ -117,3 +117,22 @@ def extract_json(text: str) -> dict:
         if i >= 0 and j > i:
             text = text[i:j + 1]
     return json.loads(text)
+
+
+def summarize(provider, label: str, instruction: str, outcome: str = "",
+              max_chars: int = 24) -> str:
+    """用一句话概括本次对《label》的改动(作为对话记录的标题)。
+
+    失败或未配置时返回空串(调用方用兜底文案)。额外一次轻量 LLM 调用。
+    """
+    if not getattr(provider, "available", False):
+        return ""
+    try:
+        system = ("你是 AI 助手。请用一句简短中文(不超过 %d 字、结尾不加标点)概括这次对"
+                  "《%s》的调整,直接输出这句话本身,不要引号、不要解释。" % (max_chars, label))
+        user = "用户要求:%s\n实际结果:%s" % ((instruction or "").strip(), (outcome or "").strip())
+        txt = (provider.complete(system, user) or "").strip()
+        first = txt.splitlines()[0].strip() if txt else ""
+        return first.strip('“”"\'。.,, ')[:80]
+    except Exception:
+        return ""

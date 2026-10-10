@@ -38,8 +38,10 @@ class GenerateIn(BaseModel):
 
 
 class RefineIn(BaseModel):
-    """AI 对话式微调:针对当前阶段产物的一条自然语言指令。"""
+    """AI 对话式微调:针对当前阶段产物的一条自然语言指令 + 之前的对话历史(多轮上下文)。"""
     instruction: str = Field(..., min_length=1, max_length=2000)
+    # 之前的对话:[{role:'user'|'assistant', content:'...'}]。仅作上下文,不会重复执行。
+    history: List[Dict[str, str]] = []
 
 
 class HistoryRestoreIn(BaseModel):

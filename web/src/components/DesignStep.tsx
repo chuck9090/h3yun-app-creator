@@ -27,7 +27,7 @@ import {
   SaveOutlined,
 } from '@ant-design/icons'
 import AutomationEditor from './AutomationEditor'
-import AiRefinePanel from './AiRefinePanel'
+import AiRefinePanel, { AiAssistHandle } from './AiRefinePanel'
 import GroupsEditor from './GroupsEditor'
 import {
   Background,
@@ -118,6 +118,7 @@ export default function DesignStep({
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([])
   const [flowEdges, setFlowEdges, onEdgesChange] = useEdgesState<Edge>([])
   const posRef = useRef<Record<string, { x: number; y: number }>>({})
+  const assistantRef = useRef<AiAssistHandle>(null)
 
   const loadEr = useCallback(async () => {
     try {
@@ -322,6 +323,7 @@ export default function DesignStep({
 
   async function generate() {
     try {
+      assistantRef.current?.open()
       await start(() => post<any>(`/api/projects/${projectId}/design/generate`, {}))
     } catch (e) {
       message.error(errMsg(e))
@@ -744,6 +746,7 @@ export default function DesignStep({
       </Modal>
 
       <AiRefinePanel
+        ref={assistantRef}
         projectId={projectId}
         stage="design"
         canWrite={canWrite}

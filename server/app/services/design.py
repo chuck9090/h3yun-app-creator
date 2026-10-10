@@ -228,9 +228,15 @@ control:`type,key,label`(按类型另有 dict/options/decimal/assoc/columns 等)
 automation:`key,title,form,trigger,sortKey,when[],actions[]`。"""
 
 
-def _refine_user_prompt(current_design, instruction, plan_markdown="", flowchart_mmd=""):
-    parts = ["【当前 ER 结构(JSON 原文)】\n%s"
-             % json.dumps(current_design, ensure_ascii=False, indent=1)]
+def _refine_user_prompt(current_design, instruction, plan_markdown="", flowchart_mmd="",
+                        history=None):
+    from .plan import _history_block
+    parts = []
+    block = _history_block(history)
+    if block:
+        parts.append(block)
+    parts.append("【当前 ER 结构(JSON 原文)】\n%s"
+                 % json.dumps(current_design, ensure_ascii=False, indent=1))
     if (plan_markdown or "").strip():
         parts.append("【系统设计方案(口径参照,勿据此大改)】\n%s" % plan_markdown.strip())
     if (flowchart_mmd or "").strip():
@@ -277,9 +283,9 @@ _DELETE_HINT = "如需删除已有表/字段/自动化,请在「ER 设计」编�
 
 
 def refine_design(current_design: dict, instruction: str, plan_markdown: str = "",
-                  flowchart_mmd: str = "", progress=None, provider=None,
+                  flowchart_mmd: str = "", history=None, progress=None, provider=None,
                   frozen_keys=None) -> dict:
-    """在**现有 ER 结构**基础上按用户指令做最小改动(覆盖式微调;已有 key 冻结)。
+    """在**现有 ER 结构**基础上按用户指令做最小改动(覆盖式微调;支持多轮上下文;已有 key 冻结)。
 
     需已配置大模型;产出经 clean_design 清洗与合法性兜底。
     **硬约束(不可绕过)**:若 AI 结果使任何**已有**表/字段/子表列/自动化编码消失
@@ -299,7 +305,7 @@ def refine_design(current_design: dict, instruction: str, plan_markdown: str = "
     _p("组装微调提示词", pct=40)
     raw = provider.complete(
         _REFINE_SYSTEM,
-        _refine_user_prompt(current_design, instruction, plan_markdown, flowchart_mmd),
+        _refine_user_prompt(current_design, instruction, plan_markdown, flowchart_mmd, history),
         json_mode=True)
     _p("解析并清洗模型输出", pct=90)
     new_c = _clean(llm.extract_json(raw), frozen)

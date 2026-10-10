@@ -13,7 +13,7 @@ import MDEditor from '@uiw/react-md-editor'
 import { errMsg, get, post, put } from '../api/client'
 import { useJob } from '../hooks/useJob'
 import { useTheme } from '../theme/ThemeContext'
-import AiRefinePanel from './AiRefinePanel'
+import AiRefinePanel, { AiAssistHandle } from './AiRefinePanel'
 
 /** 目录项(由正文标题收集而来)。 */
 interface TocItem {
@@ -53,6 +53,7 @@ export default function PlanStep({
   const [toc, setToc] = useState<TocItem[]>([])
   const [activeId, setActiveId] = useState('')
   const bodyRef = useRef<HTMLDivElement | null>(null)
+  const assistantRef = useRef<AiAssistHandle>(null)
 
   async function load() {
     setLoading(true)
@@ -141,6 +142,7 @@ export default function PlanStep({
 
   async function generate() {
     try {
+      assistantRef.current?.open()
       await start(() => post(`/api/projects/${projectId}/plan/generate`, {}))
     } catch (e) {
       message.error(errMsg(e))
@@ -181,9 +183,8 @@ export default function PlanStep({
   }
 
   return (
-    <>
-      <Card
-        title={
+    <Card
+      title={
         <Space>
           <span>系统设计方案</span>
           {provider ? <Tag color={provider === 'llm' ? 'green' : 'orange'}>{provider}</Tag> : null}
@@ -281,8 +282,8 @@ export default function PlanStep({
           </Button>
         </Empty>
       )}
-      </Card>
       <AiRefinePanel
+        ref={assistantRef}
         projectId={projectId}
         stage="plan"
         canWrite={canWrite}
@@ -290,6 +291,6 @@ export default function PlanStep({
         stageLabel="系统设计方案"
         onApplied={load}
       />
-    </>
+    </Card>
   )
 }

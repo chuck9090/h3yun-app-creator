@@ -144,6 +144,28 @@ print("\n[2] refine 服务函数")
 fp = FakeProvider()
 r = plan_service.refine_plan(PLAN_V1, "把字段A改成字段甲", provider=fp)
 check("plan.refine 返回 markdown", r["markdown"].startswith("# 模块甲") and r["provider"] == "llm")
+
+
+# 多轮上下文:history 必须出现在发给模型的 prompt 里
+class CaptureProvider:
+    name = "llm"
+    available = True
+    last_user = ""
+
+    def complete(self, system, user, json_mode=False):
+        self.last_user = user
+        return "# 模块甲\n## 表单甲\n业务内容:\n1. 微调后。\n"
+
+
+cp = CaptureProvider()
+plan_service.refine_plan(
+    PLAN_V1, "再改一次",
+    history=[{"role": "user", "content": "上一条指令ABC"},
+             {"role": "assistant", "content": "上一条结果XYZ"}],
+    provider=cp)
+check("history 用户指令进入 prompt", "上一条指令ABC" in cp.last_user)
+check("history 助手结果进入 prompt", "上一条结果XYZ" in cp.last_user)
+check("本次指令进入 prompt", "再改一次" in cp.last_user)
 r = fc_service.refine_flowchart(MMD_V1, "加一条边", plan_markdown=PLAN_V1, provider=fp)
 check("flowchart.refine 输出合法 mermaid", str(r.get("mermaid", "")).startswith("flowchart"))
 r = design_service.refine_design(DESIGN_V1, "字段甲改名", provider=fp)

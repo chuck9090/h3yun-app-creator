@@ -416,7 +416,8 @@ def refine_plan(id: int, body: S.RefineIn, user=Depends(deps.require_user)):
     def runner(progress):
         progress("读取当前方案", pct=15)
         current = storage.get_plan(slug)          # 任务执行时重读,确保用最新内容
-        res = plan_service.refine_plan(current, body.instruction, progress=progress)
+        res = plan_service.refine_plan(current, body.instruction, history=body.history,
+                                       progress=progress)
         new_md = res["markdown"]
         # 改动摘要:方案里的表单集合变化(可见地暴露 AI 是否越界)
         added, removed = [], []
@@ -443,9 +444,12 @@ def refine_plan(id: int, body: S.RefineIn, user=Depends(deps.require_user)):
         if removed:
             parts.append("移除表单:%s" % "、".join(removed[:8]))
         detail = "已微调方案" + ("(" + ";".join(parts) + ")" if parts else "(未增删表单)")
+        summary = llm_service.summarize(llm_service.get_provider(), "系统设计方案",
+                                        body.instruction, detail)
         return {"markdown": new_md, "provider": res.get("provider"),
+                "summary": summary,
                 "changeSummary": {"addedForms": added, "removedForms": removed},
-                "_detail": detail}
+                "_detail": summary or detail}
 
     job, created = jobs_service.submit(pid, user["id"], "plan_refine", runner)
     return _ok({"job": job, "created": created})
@@ -465,17 +469,19 @@ def refine_flowchart(id: int, body: S.RefineIn, user=Depends(deps.require_user))
         plan_md = storage.get_plan(slug)
         old_nodes, old_edges = flowchart_service.flow_stats(current)
         res = flowchart_service.refine_flowchart(current, body.instruction, plan_md,
-                                                 progress=progress)
+                                                 history=body.history, progress=progress)
         storage.set_flowchart(slug, res["mermaid"])  # 只写本阶段文件(flowchart.mmd)
         storage.record_snapshot(slug, "flowchart", res["mermaid"], origin="refine",
                                 instruction=body.instruction, provider=res.get("provider"))
         storage.set_stage(slug, "flowchart", src=storage.stage_src(slug, "flowchart"))
         db.add_event(pid, "flowchart", "AI 微调业务流程图")
+        detail = "已微调流程图(节点 %d→%d,边 %d→%d)" % (
+            old_nodes, res.get("nodes", 0), old_edges, res.get("edges", 0))
+        summary = llm_service.summarize(llm_service.get_provider(), "业务流程图",
+                                        body.instruction, detail)
         return {"mermaid": res["mermaid"], "provider": res.get("provider"),
                 "nodes": res.get("nodes", 0), "edges": res.get("edges", 0),
-                "_detail": "已微调流程图(节点 %d→%d,边 %d→%d)"
-                           % (old_nodes, res.get("nodes", 0),
-                              old_edges, res.get("edges", 0))}
+                "summary": summary, "_detail": summary or detail}
 
     job, created = jobs_service.submit(pid, user["id"], "flowchart_refine", runner)
     return _ok({"job": job, "created": created})
@@ -495,7 +501,7 @@ def refine_design(id: int, body: S.RefineIn, user=Depends(deps.require_user)):
         plan_md = storage.get_plan(slug)
         mmd = storage.get_flowchart(slug)
         res = design_service.refine_design(current, body.instruction, plan_md, mmd,
-                                           progress=progress,
+                                           history=body.history, progress=progress,
                                            frozen_keys=EB.frozen_keys(slug))
         design = {"sheets": res.get("sheets") or [],
                   "dicts": res.get("dicts") or {},
@@ -508,9 +514,13 @@ def refine_design(id: int, body: S.RefineIn, user=Depends(deps.require_user)):
                                 instruction=body.instruction, provider=res.get("provider"))
         storage.set_stage(slug, "design", src=storage.stage_src(slug, "design"))
         db.add_event(pid, "design", "AI 微调 ER 结构")
-        payload = _design_payload(design, res.get("provider"), check, error)
-        payload["_detail"] = "已微调 ER 结构(%d 表/%d 自动化)" % (
+        detail = "已微调 ER 结构(%d 表/%d 自动化)" % (
             len(design["sheets"]), len(design.get("automations") or []))
+        summary = llm_service.summarize(llm_service.get_provider(), "ER 结构",
+                                        body.instruction, detail)
+        payload = _design_payload(design, res.get("provider"), check, error)
+        payload["summary"] = summary
+        payload["_detail"] = summary or detail
         return payload
 
     job, created = jobs_service.submit(pid, user["id"], "design_refine", runner)
